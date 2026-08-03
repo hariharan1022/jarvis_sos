@@ -6,11 +6,6 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
-    "splash": {
-      "image": "./assets/icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#07080d"
-    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.safenova.ai",
@@ -19,7 +14,7 @@
         "NSLocationWhenInUseUsageDescription": "SafeNova needs location access to send your coordinates to emergency contacts during an SOS event.",
         "NSLocationAlwaysUsageDescription": "SafeNova needs background location to track your position during active emergencies.",
         "NSCameraUsageDescription": "SafeNova uses the camera to capture evidence during emergency situations.",
-        "NSSpeechRecognitionUsageDescription": "SafeNova uses speech recognition to listen for your voice emergency commands like 'Help Me' or 'Nova Help Me'."
+        "NSSpeechRecognitionUsageDescription": "SafeNova uses speech recognition to listen for your voice emergency commands."
       }
     },
     "android": {
@@ -29,14 +24,14 @@
         "foregroundImage": "./assets/icon.png"
       },
       "permissions": [
-        "RECORD_AUDIO",
-        "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION",
-        "ACCESS_BACKGROUND_LOCATION",
-        "CAMERA",
-        "VIBRATE",
-        "RECEIVE_BOOT_COMPLETED",
-        "POST_NOTIFICATIONS"
+        "android.permission.RECORD_AUDIO",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.CAMERA",
+        "android.permission.VIBRATE",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.POST_NOTIFICATIONS"
       ]
     },
     "web": {
@@ -54,11 +49,6 @@
           "speechRecognitionPermission": "SafeNova uses speech recognition to listen for wake phrases like 'Nova Help Me'."
         }
       ]
-    ],
-    "extra": {
-      "eas": {
-        "projectId": "safenova-ai"
-      }
-    }
+    ]
   }
 }
