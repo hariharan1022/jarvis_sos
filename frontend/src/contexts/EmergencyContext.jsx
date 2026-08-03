@@ -14,6 +14,7 @@ export const EmergencyProvider = ({ children }) => {
   const recognitionRef = useRef(null);
   const audioRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
+  const lastTriggerTimeRef = useRef(0);
 
   // Initialize Speech Recognition for Wake Word
   useEffect(() => {
@@ -108,13 +109,18 @@ export const EmergencyProvider = ({ children }) => {
       recognition.onresult = (event) => {
         const customWakeWord = user?.custom_wake_word?.toLowerCase() || '';
         const standardWakePhrases = [
-          'nova', 'hey nova', 'hi nova', 'hey nowa', 'hey noah', 'hey nora',
-          'help', 'help me', 'save me', 'emergency', 'danger', 'guardian activate'
+          'nova help me', 'i am in danger', 'help me', 'save me', 'emergency', 'help', 'sos',
+          'hey nova', 'hi nova', 'hey nowa', 'hey noah', 'hey nora', 'nova'
         ];
 
         for (let i = event.resultIndex; i < event.results.length; ++i) {
-          const transcript = event.results[i][0].transcript.toLowerCase();
-          
+          const result = event.results[i][0];
+          const transcript = result.transcript.toLowerCase();
+          const confidence = result.confidence;
+
+          // Check for confidence score to ensure reliable voice triggering
+          if (confidence < 0.3) continue;
+
           // Check standard phrases
           const matchedPhrase = standardWakePhrases.find(phrase => transcript.includes(phrase)) 
             || (customWakeWord && transcript.includes(customWakeWord) ? customWakeWord : null);
@@ -147,6 +153,14 @@ export const EmergencyProvider = ({ children }) => {
 
   const triggerEmergency = async (type = 'manual', wakeWord = '') => {
     if (isEmergency) return;
+
+    // Prevent duplicate triggers within 30 seconds
+    const now = Date.now();
+    if (now - lastTriggerTimeRef.current < 30000) {
+      console.log('Ignoring repeated trigger within 30-second lock window.');
+      return;
+    }
+    lastTriggerTimeRef.current = now;
 
     // Get current battery & location
     let batteryLevel = 100;
@@ -268,11 +282,13 @@ export const EmergencyProvider = ({ children }) => {
         setIsEmergency(false);
         setActiveSession(null);
         setSpeechStatus('listening');
+        startSpeechRecognition();
       }
     } catch (err) {
       console.error('Error resolving emergency:', err);
       setIsEmergency(false);
       setActiveSession(null);
+      startSpeechRecognition();
     }
   };
 
