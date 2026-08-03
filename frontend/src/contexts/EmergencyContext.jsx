@@ -64,6 +64,8 @@ export const EmergencyProvider = ({ children }) => {
       recognition.interimResults = true;
       recognition.lang = 'en-US';
 
+      let isPermissionDenied = false;
+
       recognition.onstart = () => {
         setSpeechStatus('listening');
       };
@@ -71,17 +73,16 @@ export const EmergencyProvider = ({ children }) => {
       recognition.onerror = (event) => {
         console.error('Speech recognition error', event.error);
         if (event.error === 'not-allowed') {
+          isPermissionDenied = true;
           setSpeechStatus('permission_denied');
         } else {
           setSpeechStatus('error');
-          // Restart after short delay
-          setTimeout(startSpeechRecognition, 5000);
         }
       };
 
       recognition.onend = () => {
-        // Continuous listening: restart if user is logged in and not in emergency
-        if (user && !isEmergency) {
+        // Continuous listening: restart if user is logged in, not in emergency, not blocked by permission, and not intentionally stopped
+        if (user && !isEmergency && !isPermissionDenied && recognitionRef.current === recognition) {
           try {
             recognition.start();
           } catch (e) {
