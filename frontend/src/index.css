@@ -247,6 +247,14 @@ body {
   border-left: 3px solid var(--primary);
 }
 
+@media (max-width: 767px) {
+  .sidebar-link:hover, .sidebar-link.active {
+    border-left: none;
+    border-bottom: 2px solid var(--primary);
+    border-radius: 8px 8px 0 0;
+  }
+}
+
 /* Badge tags */
 .badge {
   padding: 4px 10px;
