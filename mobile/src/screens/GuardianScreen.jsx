@@ -8,9 +8,9 @@ import { useRoute } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import { COLORS, FONTS, glassCard, btnPrimary, btnPrimaryText, row, rowBetween } from '../styles/theme';
-import { WS_BASE_URL } from '../config';
+import { API_BASE_URL, WS_BASE_URL } from '../config';
 
-const API = 'http://10.0.2.2:8000/api';
+const API = API_BASE_URL;
 
 export const GuardianScreen = () => {
   const route = useRoute();
@@ -48,9 +48,10 @@ export const GuardianScreen = () => {
       const seeds = data.location_logs.map(l => ({ latitude: l.latitude, longitude: l.longitude }));
       setCoordinates(seeds);
 
+      const mediaBase = API_BASE_URL.replace('/api', '');
       const initialTimeline = [{ type: 'info', text: 'Emergency Triggered', time: data.start_time }];
       data.evidence_items.forEach(ev => {
-        initialTimeline.push({ type: 'evidence', evidence_type: ev.type, url: `http://10.0.2.2:8000${ev.filepath}`, time: ev.timestamp });
+        initialTimeline.push({ type: 'evidence', evidence_type: ev.type, url: `${mediaBase}${ev.filepath}`, time: ev.timestamp });
       });
       setTimeline(initialTimeline.sort((a, b) => new Date(a.time) - new Date(b.time)));
       connectWebSocket(targetCode);
@@ -75,7 +76,8 @@ export const GuardianScreen = () => {
         setTimeline(prev => [...prev, { type: 'info', text: `Location Updated (Speed: ${message.speed} km/h)`, time: message.timestamp }]);
       }
       if (message.type === 'evidence_update') {
-        setTimeline(prev => [...prev, { type: 'evidence', evidence_type: message.evidence_type, url: `http://10.0.2.2:8000${message.filepath}`, time: message.timestamp }]);
+        const mediaBase = API_BASE_URL.replace('/api', '');
+        setTimeline(prev => [...prev, { type: 'evidence', evidence_type: message.evidence_type, url: `${mediaBase}${message.filepath}`, time: message.timestamp }]);
       }
       if (message.type === 'emergency_resolved') {
         setTimeline(prev => [...prev, { type: 'info', text: 'Emergency Resolved / Closed safely.', time: message.resolved_at }]);
