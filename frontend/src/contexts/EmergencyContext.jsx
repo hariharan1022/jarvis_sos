@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from './AuthContext';
 
 const EmergencyContext = createContext(null);
@@ -7,47 +7,54 @@ export const EmergencyProvider = ({ children }) => {
   const { user, token, API_URL } = useAuth();
   const [isEmergency, setIsEmergency] = useState(false);
   const [activeSession, setActiveSession] = useState(null);
-  const [speechStatus, setSpeechStatus] = useState('offline'); // offline, listening, matched, error, permission_denied, unsupported
+  const [speechStatus, setSpeechStatus] = useState('offline');
   const [wakePhraseMatch, setWakePhraseMatch] = useState('');
   const [liveTranscript, setLiveTranscript] = useState('');
   const [lastWakePhrase, setLastWakePhrase] = useState('');
-  const [recognitionConfidence, setRecognitionConfidence] = useState(1.0);
+  const [recognitionConfidence, setRecognitionConfidence] = useState(0);
   const [micPermissionGranted, setMicPermissionGranted] = useState(null);
   const [micPermissionError, setMicPermissionError] = useState(null);
   const [voiceGuardianEnabled, setVoiceGuardianEnabled] = useState(true);
-  
+
   const locationIntervalRef = useRef(null);
-  const recognitionRef = useRef(null);
   const audioRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
   const lastTriggerTimeRef = useRef(0);
 
-  // Automatically request mic permission and start recognition
+  // ─── CRITICAL: Use refs for values accessed inside recognition callbacks ───
+  // These refs are the fix for the stale-closure bug — recognition event
+  // handlers capture refs (always current) instead of stale state variables.
+  const recognitionRef = useRef(null);
+  const enabledRef = useRef(true);        // mirrors voiceGuardianEnabled
+  const isEmergencyRef = useRef(false);   // mirrors isEmergency
+  const userRef = useRef(null);           // mirrors user
+  const restartTimerRef = useRef(null);
+  const isRestartingRef = useRef(false);
+
+  // Keep refs in sync with state
+  useEffect(() => { enabledRef.current = voiceGuardianEnabled; }, [voiceGuardianEnabled]);
+  useEffect(() => { isEmergencyRef.current = isEmergency; }, [isEmergency]);
+  useEffect(() => { userRef.current = user; }, [user]);
+
+  // ─── Start / stop guardian on auth + toggle ───────────────────────────────
   useEffect(() => {
     if (user && voiceGuardianEnabled) {
       requestMicPermissionAndStart();
     } else {
       stopSpeechRecognition();
     }
-    
     return () => {
       stopSpeechRecognition();
       if (locationIntervalRef.current) clearInterval(locationIntervalRef.current);
     };
   }, [user, voiceGuardianEnabled]);
 
-  // Continuously post location during an emergency
+  // ─── Location streaming during emergency ─────────────────────────────────
   useEffect(() => {
     if (isEmergency && activeSession) {
-      locationIntervalRef.current = setInterval(() => {
-        streamCurrentLocation();
-      }, 5000);
-      
-      // Auto-start recording background evidence
+      locationIntervalRef.current = setInterval(streamCurrentLocation, 5000);
       startEvidenceRecording();
-      // Snap a picture using front camera (simulated/actual if allowed)
       captureCameraSnapshot('image_front');
-      // Snap a picture using rear camera (simulated/actual if allowed)
       setTimeout(() => captureCameraSnapshot('image_rear'), 2000);
     } else {
       if (locationIntervalRef.current) {
@@ -58,43 +65,57 @@ export const EmergencyProvider = ({ children }) => {
     }
   }, [isEmergency, activeSession]);
 
-  const normalizeText = (text) => {
-    return text
+  // ─── Text normalization ───────────────────────────────────────────────────
+  const normalizeText = (text) =>
+    text
       .toLowerCase()
-      .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?]/g, "") // remove punctuation
-      .replace(/\s+/g, " ") // normalize spacing
+      .replace(/[.,!?;:'"()\[\]{}\-_\/\\@#$%^&*+=|<>`~]/g, ' ')
+      .replace(/\s+/g, ' ')
       .trim();
-  };
 
+  // ─── Fuzzy phrase matcher ─────────────────────────────────────────────────
   const checkFuzzyMatch = (transcript, customWakeWord = '') => {
-    const normalized = normalizeText(transcript);
-    const targets = [
-      'nova help me', 'hey nova', 'help', 'help me', 
-      'emergency', 'sos', 'save me', 'i am in danger'
-    ];
-    if (customWakeWord) {
-      targets.push(normalizeText(customWakeWord));
-    }
+    const n = normalizeText(transcript);
+    console.log(`[Voice Guardian] Checking transcript: "${n}"`);
 
-    // 1. Direct match check
+    // Primary exact-include targets (ordered from most specific to least)
+    const targets = [
+      'nova help me',
+      'hey nova',
+      'nova',
+      'i am in danger',
+      'save me',
+      'emergency',
+      'help me',
+      'help',
+      'sos',
+    ];
+    if (customWakeWord) targets.unshift(normalizeText(customWakeWord));
+
     for (const target of targets) {
-      if (normalized.includes(target)) {
+      if (n.includes(target)) {
+        console.log(`[Voice Guardian] Direct match: "${target}"`);
         return target;
       }
     }
 
-    // 2. Homophones / common phonetic misrecognitions
-    const commonMisrecognitions = [
-      { target: 'nova help me', pattern: /no[ah|ra|wa]\s+help\s+me/i },
-      { target: 'hey nova', pattern: /hey\s+no[ah|ra|wa]/i },
-      { target: 'emergency', pattern: /emergen/i },
-      { target: 'sos', pattern: /s\s*o\s*s/i },
+    // Phonetic / misrecognition patterns
+    const phonetics = [
+      { target: 'nova help me', pattern: /no[vb][ao]\s+help\s+me/i },
+      { target: 'nova help me', pattern: /no[vb]a\s+help/i },
+      { target: 'hey nova',     pattern: /hey\s+no[vb][ao]/i },
+      { target: 'nova',         pattern: /no[vb][ao]/i },
+      { target: 'emergency',    pattern: /emergen/i },
+      { target: 'sos',          pattern: /\bs\s*[.\-]?\s*o\s*[.\-]?\s*s\b/i },
+      { target: 'save me',      pattern: /saf[e]?\s+me/i },
       { target: 'i am in danger', pattern: /danger/i },
-      { target: 'save me', pattern: /safe\s+me/i }
+      { target: 'help me',      pattern: /\bhelp\s+m[ea]\b/i },
+      { target: 'help',         pattern: /\bhelp\b/i },
     ];
 
-    for (const { target, pattern } of commonMisrecognitions) {
-      if (pattern.test(normalized)) {
+    for (const { target, pattern } of phonetics) {
+      if (pattern.test(n)) {
+        console.log(`[Voice Guardian] Phonetic match: "${target}" via pattern ${pattern}`);
         return target;
       }
     }
@@ -102,391 +123,393 @@ export const EmergencyProvider = ({ children }) => {
     return null;
   };
 
+  // ─── Confirmation chirp ───────────────────────────────────────────────────
   const playConfirmationChirp = () => {
     try {
-      const AudioContext = window.AudioContext || window.webkitAudioContext;
-      const ctx = new AudioContext();
-      
-      // Hi-tech alert tone 1
-      const osc1 = ctx.createOscillator();
-      const gain1 = ctx.createGain();
-      osc1.type = 'sine';
-      osc1.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
-      osc1.frequency.exponentialRampToValueAtTime(987.77, ctx.currentTime + 0.12); // B5
-      gain1.gain.setValueAtTime(0.12, ctx.currentTime);
-      gain1.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.12);
-      osc1.connect(gain1);
-      gain1.connect(ctx.destination);
-      osc1.start();
-      osc1.stop(ctx.currentTime + 0.12);
-
-      // Alert tone 2 (delayed slightly)
-      setTimeout(() => {
-        const osc2 = ctx.createOscillator();
-        const gain2 = ctx.createGain();
-        osc2.type = 'sine';
-        osc2.frequency.setValueAtTime(783.99, ctx.currentTime); // G5
-        osc2.frequency.exponentialRampToValueAtTime(1174.66, ctx.currentTime + 0.18); // D6
-        gain2.gain.setValueAtTime(0.12, ctx.currentTime);
-        gain2.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.18);
-        osc2.connect(gain2);
-        gain2.connect(ctx.destination);
-        osc2.start();
-        osc2.stop(ctx.currentTime + 0.18);
-      }, 70);
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      const ctx = new AudioCtx();
+      [[587.33, 987.77, 0, 0.12], [783.99, 1174.66, 0.07, 0.18]].forEach(([f1, f2, delay, dur]) => {
+        setTimeout(() => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(f1, ctx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(f2, ctx.currentTime + dur);
+          gain.gain.setValueAtTime(0.15, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start();
+          osc.stop(ctx.currentTime + dur);
+        }, delay * 1000);
+      });
     } catch (e) {
-      console.warn('Unable to play audio synth tone:', e);
+      console.warn('Chirp audio failed:', e);
     }
   };
 
+  // ─── Mic permission + start ───────────────────────────────────────────────
   const requestMicPermissionAndStart = async () => {
     try {
-      console.log('Requesting microphone permissions...');
+      console.log('[Voice Guardian] Requesting microphone permission...');
       await navigator.mediaDevices.getUserMedia({ audio: true });
+      console.log('[Voice Guardian] Microphone permission GRANTED.');
       setMicPermissionGranted(true);
       setMicPermissionError(null);
       startSpeechRecognition();
     } catch (err) {
-      console.error('Microphone permission request failed:', err);
+      console.error('[Voice Guardian] Microphone permission DENIED:', err.name, err.message);
       setMicPermissionGranted(false);
-      setMicPermissionError('Microphone permission denied. Please allow microphone access in your browser settings to enable the Voice Guardian.');
+      const msg =
+        err.name === 'NotAllowedError'
+          ? 'Microphone blocked by browser. Click the lock icon in the address bar → Allow microphone.'
+          : err.name === 'NotFoundError'
+          ? 'No microphone detected on this device.'
+          : `Microphone error: ${err.message}`;
+      setMicPermissionError(msg);
       setSpeechStatus('permission_denied');
     }
   };
 
+  // ─── Core recognition start — uses refs to avoid stale closures ──────────
   const startSpeechRecognition = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      console.warn('SpeechRecognition API is not supported in this browser.');
+      console.warn('[Voice Guardian] SpeechRecognition API not supported in this browser.');
       setSpeechStatus('unsupported');
       return;
     }
 
+    // Cancel any pending restart
+    if (restartTimerRef.current) {
+      clearTimeout(restartTimerRef.current);
+      restartTimerRef.current = null;
+    }
+
+    // Tear down old session cleanly
     if (recognitionRef.current) {
-      try {
-        recognitionRef.current.stop();
-      } catch (e) {}
+      try { recognitionRef.current.abort(); } catch (_) {}
+      recognitionRef.current = null;
     }
 
     try {
       const recognition = new SpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = true;
+      recognition.maxAlternatives = 5;
       recognition.lang = 'en-US';
 
+      // ── onstart ────────────────────────────────────────────────────────
       recognition.onstart = () => {
-        console.log('[Voice Guardian]: Speech recognition engine is online & listening.');
+        console.log('[Voice Guardian] ✅ Recognition engine STARTED — listening for wake phrases.');
         setSpeechStatus('listening');
+        isRestartingRef.current = false;
       };
 
+      // ── onerror ────────────────────────────────────────────────────────
       recognition.onerror = (event) => {
-        console.error(`[Voice Guardian Error]: ${event.error}`);
+        console.error(`[Voice Guardian] ❌ Recognition error: "${event.error}"`, event.message || '');
         switch (event.error) {
           case 'not-allowed':
+          case 'service-not-allowed':
             setMicPermissionGranted(false);
-            setMicPermissionError('Microphone access blocked. Please re-allow permission in browser address bar.');
+            setMicPermissionError('Microphone access blocked. Allow it in the browser address bar (🔒 icon).');
             setSpeechStatus('permission_denied');
-            break;
+            return; // no restart
           case 'no-speech':
-            // No speech detected, ignore
+            console.log('[Voice Guardian] No speech detected — will auto-restart.');
             break;
           case 'network':
-            console.warn('Network socket dropped during speech streams. Auto-retrying.');
+            console.warn('[Voice Guardian] Network error — will auto-restart.');
             setSpeechStatus('error');
             break;
           case 'audio-capture':
-            console.warn('Microphone hardware capture error. Auto-retrying.');
+            console.warn('[Voice Guardian] Mic capture error — will auto-restart.');
             setSpeechStatus('error');
             break;
           case 'aborted':
-            console.log('Speech recognition stream aborted.');
+            console.log('[Voice Guardian] Recognition aborted.');
             break;
           default:
+            console.warn(`[Voice Guardian] Unknown error: ${event.error}`);
             setSpeechStatus('error');
         }
+        // Schedule restart for recoverable errors
+        scheduleRestart();
       };
 
+      // ── onend ─────────────────────────────────────────────────────────
+      // KEY FIX: uses refs (not stale state) to decide whether to restart
       recognition.onend = () => {
-        console.log('[Voice Guardian]: Recognition stream ended.');
-        // Auto recover and restart if voice guardian is still active
-        if (user && voiceGuardianEnabled && !isEmergency && recognitionRef.current === recognition) {
-          console.log('[Voice Guardian]: Auto-recovering stream now...');
-          setTimeout(() => {
-            if (user && voiceGuardianEnabled && !isEmergency && recognitionRef.current === recognition) {
-              try {
-                recognition.start();
-              } catch (e) {}
-            }
-          }, 1000);
+        console.log('[Voice Guardian] 🔄 Recognition stream ended.');
+        if (enabledRef.current && userRef.current && !isEmergencyRef.current) {
+          scheduleRestart();
+        } else {
+          console.log('[Voice Guardian] Not restarting — guardian disabled or emergency active.');
         }
       };
 
+      // ── onresult ───────────────────────────────────────────────────────
       recognition.onresult = (event) => {
-        const customWakeWord = user?.custom_wake_word || '';
-        let interimTranscript = '';
-        let finalTranscript = '';
+        let bestTranscript = '';
+        let bestConfidence = 0;
+        let hasMatch = false;
 
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
+        // Iterate all new results since last resultIndex
+        for (let i = event.resultIndex; i < event.results.length; i++) {
           const result = event.results[i];
-          const text = result[0].transcript;
-          const confidence = result[0].confidence;
-          
-          setRecognitionConfidence(confidence);
 
-          if (result.isFinal) {
-            finalTranscript += text;
-          } else {
-            interimTranscript += text;
+          // Check all alternatives (maxAlternatives=5)
+          for (let alt = 0; alt < result.length; alt++) {
+            const text = result[alt].transcript;
+            const conf = result[alt].confidence || 0;
+
+            if (conf > bestConfidence || alt === 0) {
+              bestConfidence = conf;
+              bestTranscript = text;
+            }
+
+            console.log(
+              `[Voice Guardian] ${result.isFinal ? '✅ FINAL' : '⏳ interim'} [alt ${alt}]: "${text}" (${(conf * 100).toFixed(1)}%)`
+            );
+
+            // Check EVERY alternative for a match
+            if (!hasMatch) {
+              const customWakeWord = userRef.current?.custom_wake_word || '';
+              const matched = checkFuzzyMatch(text, customWakeWord);
+              if (matched) {
+                hasMatch = true;
+                console.log(`[Voice Guardian] 🚨 WAKE PHRASE DETECTED: "${matched}" — triggering SOS!`);
+                setWakePhraseMatch(matched);
+                setLastWakePhrase(matched);
+                setSpeechStatus('matched');
+                setRecognitionConfidence(conf);
+                playConfirmationChirp();
+                triggerEmergency('voice_activation', matched);
+                // Resume listening after match
+                setTimeout(() => {
+                  if (enabledRef.current && !isEmergencyRef.current) {
+                    setSpeechStatus('listening');
+                  }
+                }, 3000);
+              }
+            }
           }
         }
 
-        const currentText = (finalTranscript || interimTranscript).trim();
-        if (currentText) {
-          setLiveTranscript(currentText);
-          console.log(`[Recognized Transcript]: "${currentText}" (confidence: ${(event.results[event.results.length - 1][0].confidence * 100).toFixed(1)}%)`);
-
-          const matched = checkFuzzyMatch(currentText, customWakeWord);
-          if (matched) {
-            console.log(`[WAKE WAKE DETECTED]: "${matched}" matched with confidence! Triggering SOS.`);
-            setWakePhraseMatch(matched);
-            setLastWakePhrase(matched);
-            setSpeechStatus('matched');
-            
-            // Play hi-tech confirmation chirp sound
-            playConfirmationChirp();
-            
-            // Trigger emergency workflow
-            triggerEmergency('voice_activation', matched);
-          }
+        // Update live transcript display
+        if (bestTranscript.trim()) {
+          setLiveTranscript(bestTranscript.trim());
+          setRecognitionConfidence(bestConfidence);
         }
       };
 
       recognitionRef.current = recognition;
-      recognition.start();
+
+      // Small delay to avoid "already started" race condition
+      setTimeout(() => {
+        try {
+          recognition.start();
+          console.log('[Voice Guardian] 📡 recognition.start() called.');
+        } catch (e) {
+          console.error('[Voice Guardian] start() threw:', e.message);
+          scheduleRestart();
+        }
+      }, 100);
+
     } catch (e) {
-      console.error('Speech initialization error', e);
+      console.error('[Voice Guardian] Initialization error:', e);
       setSpeechStatus('error');
     }
   };
 
+  // ─── Debounced restart helper ────────────────────────────────────────────
+  const scheduleRestart = () => {
+    if (isRestartingRef.current) return;
+    if (!enabledRef.current || isEmergencyRef.current) return;
+    isRestartingRef.current = true;
+    console.log('[Voice Guardian] ⏱ Scheduling restart in 1s...');
+    restartTimerRef.current = setTimeout(() => {
+      if (enabledRef.current && !isEmergencyRef.current) {
+        console.log('[Voice Guardian] 🔁 Restarting recognition now.');
+        startSpeechRecognition();
+      } else {
+        isRestartingRef.current = false;
+      }
+    }, 1000);
+  };
+
+  // ─── Stop ────────────────────────────────────────────────────────────────
   const stopSpeechRecognition = () => {
+    if (restartTimerRef.current) {
+      clearTimeout(restartTimerRef.current);
+      restartTimerRef.current = null;
+    }
+    isRestartingRef.current = false;
     if (recognitionRef.current) {
-      try {
-        recognitionRef.current.stop();
-      } catch (e) {}
+      try { recognitionRef.current.abort(); } catch (_) {}
       recognitionRef.current = null;
     }
     setSpeechStatus('offline');
+    console.log('[Voice Guardian] 🛑 Recognition stopped.');
   };
 
+  // ─── Emergency trigger ────────────────────────────────────────────────────
   const triggerEmergency = async (type = 'manual', wakeWord = '') => {
-    if (isEmergency) return;
-
-    // Prevent duplicate triggers within 30 seconds
+    if (isEmergencyRef.current) {
+      console.log('[Emergency] Already active — ignoring duplicate trigger.');
+      return;
+    }
     const now = Date.now();
     if (now - lastTriggerTimeRef.current < 30000) {
-      console.log('Ignoring repeated trigger within 30-second lock window.');
+      console.log('[Emergency] Duplicate trigger within 30s lock — ignored.');
       return;
     }
     lastTriggerTimeRef.current = now;
+    console.log(`[Emergency] 🚨 Triggering emergency — type: "${type}", phrase: "${wakeWord}"`);
 
-    // Get current battery & location
     let batteryLevel = 100;
     try {
       const bat = await navigator.getBattery();
       batteryLevel = Math.round(bat.level * 100);
-    } catch (e) {}
+    } catch (_) {}
 
     navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const { latitude, longitude, speed } = position.coords;
-        
-        // Reverse geocode location (simulated or mock lookup for instant address)
-        const mockAddress = `Approx. near lat ${latitude.toFixed(4)}, lng ${longitude.toFixed(4)}`;
-
-        try {
-          const formData = new FormData();
-          formData.append('emergency_type', type === 'voice_activation' ? `Voice Activation (${wakeWord})` : type);
-          formData.append('latitude', latitude);
-          formData.append('longitude', longitude);
-          formData.append('battery', batteryLevel);
-          formData.append('signal_status', navigator.onLine ? 'Good' : 'Offline');
-          formData.append('address', mockAddress);
-
-          const res = await fetch(`${API_URL}/emergency/trigger`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${token}`
-            },
-            body: formData
-          });
-
-          if (res.ok) {
-            const session = await res.json();
-            setActiveSession(session);
-            setIsEmergency(true);
-          }
-        } catch (err) {
-          console.error('Failed to trigger emergency API:', err);
-          // Fallback to offline mode
-          setIsEmergency(true);
-        }
+      async ({ coords: { latitude, longitude } }) => {
+        console.log(`[Emergency] GPS acquired: ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`);
+        await _sendTriggerRequest(latitude, longitude, batteryLevel, type, wakeWord);
       },
       (err) => {
-        console.error('Geolocation error:', err);
-        // Fallback default coordinates
-        fallbackTrigger(12.9716, 77.5946, type, batteryLevel);
+        console.warn('[Emergency] GPS unavailable, using fallback coords:', err.message);
+        _sendTriggerRequest(12.9716, 77.5946, batteryLevel, type, wakeWord);
       },
-      { enableHighAccuracy: true }
+      { enableHighAccuracy: true, timeout: 8000 }
     );
   };
 
-  const fallbackTrigger = async (lat, lng, type, batteryLevel) => {
-    try {
-      const formData = new FormData();
-      formData.append('emergency_type', type);
-      formData.append('latitude', lat);
-      formData.append('longitude', lng);
-      formData.append('battery', batteryLevel);
-      formData.append('address', 'Downtown Core Area');
+  const _sendTriggerRequest = async (lat, lng, battery, type, wakeWord) => {
+    const formData = new FormData();
+    formData.append('emergency_type', type === 'voice_activation' ? `Voice Activation (${wakeWord})` : type);
+    formData.append('latitude', lat);
+    formData.append('longitude', lng);
+    formData.append('battery', battery);
+    formData.append('signal_status', navigator.onLine ? 'Good' : 'Offline');
+    formData.append('address', `Approx. near lat ${lat.toFixed(4)}, lng ${lng.toFixed(4)}`);
 
+    try {
       const res = await fetch(`${API_URL}/emergency/trigger`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
-        body: formData
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
       });
       if (res.ok) {
         const session = await res.json();
+        console.log('[Emergency] ✅ Backend acknowledged SOS. Session:', session.tracking_code);
         setActiveSession(session);
         setIsEmergency(true);
+      } else {
+        console.error('[Emergency] Backend returned error:', res.status);
+        setIsEmergency(true); // offline fallback
       }
-    } catch (e) {
-      setIsEmergency(true);
+    } catch (err) {
+      console.error('[Emergency] Fetch failed:', err.message);
+      setIsEmergency(true); // offline fallback
     }
   };
 
+  const fallbackTrigger = (lat, lng, type, battery) =>
+    _sendTriggerRequest(lat, lng, battery, type, '');
+
+  // ─── Location streaming ───────────────────────────────────────────────────
   const streamCurrentLocation = () => {
     if (!token) return;
-    
     navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const { latitude, longitude, speed, heading, accuracy } = position.coords;
-        let batteryLevel = 100;
+      async ({ coords: { latitude, longitude, speed, heading, accuracy } }) => {
+        let battery = 100;
+        try { const b = await navigator.getBattery(); battery = Math.round(b.level * 100); } catch (_) {}
+        const fd = new FormData();
+        fd.append('latitude', latitude);
+        fd.append('longitude', longitude);
+        fd.append('speed', speed || 0.0);
+        fd.append('direction', heading || 0.0);
+        fd.append('battery', battery);
+        fd.append('accuracy', accuracy || 10.0);
         try {
-          const bat = await navigator.getBattery();
-          batteryLevel = Math.round(bat.level * 100);
-        } catch (e) {}
-
-        try {
-          const formData = new FormData();
-          formData.append('latitude', latitude);
-          formData.append('longitude', longitude);
-          formData.append('speed', speed || 0.0);
-          formData.append('direction', heading || 0.0);
-          formData.append('battery', batteryLevel);
-          formData.append('accuracy', accuracy || 10.0);
-
           await fetch(`${API_URL}/emergency/log-location`, {
             method: 'POST',
-            headers: { 'Authorization': `Bearer ${token}` },
-            body: formData
+            headers: { Authorization: `Bearer ${token}` },
+            body: fd,
           });
-        } catch (err) {
-          console.error('Error logging position:', err);
-        }
+        } catch (e) { console.error('[Location] Log error:', e); }
       },
-      (err) => console.error('Position streaming error:', err),
+      (e) => console.error('[Location] Position error:', e),
       { enableHighAccuracy: true }
     );
   };
 
+  // ─── Resolve emergency ────────────────────────────────────────────────────
   const resolveEmergency = async () => {
     try {
       const res = await fetch(`${API_URL}/emergency/resolve`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
         setIsEmergency(false);
         setActiveSession(null);
-        setSpeechStatus('listening');
-        startSpeechRecognition();
+        setTimeout(() => {
+          if (enabledRef.current) startSpeechRecognition();
+        }, 500);
       }
     } catch (err) {
-      console.error('Error resolving emergency:', err);
+      console.error('[Emergency] Resolve error:', err);
       setIsEmergency(false);
       setActiveSession(null);
-      startSpeechRecognition();
     }
   };
 
-  // Media Capture & Audio Recording
+  // ─── Evidence recording ───────────────────────────────────────────────────
   const startEvidenceRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
-      audioRecorderRef.current = mediaRecorder;
+      const recorder = new MediaRecorder(stream);
+      audioRecorderRef.current = recorder;
       audioChunksRef.current = [];
-
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
+      recorder.onstop = async () => {
+        uploadEvidenceBlob(new Blob(audioChunksRef.current, { type: 'audio/webm' }), 'audio');
+        stream.getTracks().forEach((t) => t.stop());
       };
-
-      mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        uploadEvidenceBlob(audioBlob, 'audio');
-        // Stop all track streams
-        stream.getTracks().forEach(track => track.stop());
-      };
-
-      mediaRecorder.start();
-      // Record in 5-second bursts and upload
-      setTimeout(() => {
-        if (mediaRecorder.state === 'recording') {
-          mediaRecorder.stop();
-        }
-      }, 5000);
-
-    } catch (e) {
-      console.warn('Audio capture not allowed or failing:', e);
-    }
+      recorder.start();
+      setTimeout(() => { if (recorder.state === 'recording') recorder.stop(); }, 5000);
+    } catch (e) { console.warn('[Evidence] Audio capture failed:', e); }
   };
 
   const stopEvidenceRecording = () => {
-    if (audioRecorderRef.current && audioRecorderRef.current.state === 'recording') {
-      try {
-        audioRecorderRef.current.stop();
-      } catch (e) {}
+    if (audioRecorderRef.current?.state === 'recording') {
+      try { audioRecorderRef.current.stop(); } catch (_) {}
     }
   };
 
-  const captureCameraSnapshot = async (type = 'image_front') => {
-    // Camera access disabled. Upload mock evidence upload to keep dashboards functional.
+  const captureCameraSnapshot = (type = 'image_front') =>
     createMockEvidenceUpload(type);
-  };
 
   const uploadEvidenceBlob = async (blob, type) => {
     if (!token) return;
-    const formData = new FormData();
-    formData.append('type', type);
-    formData.append('file', blob, `${type}.bin`);
-    
+    const fd = new FormData();
+    fd.append('type', type);
+    fd.append('file', blob, `${type}.bin`);
     try {
       await fetch(`${API_URL}/emergency/upload-evidence`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
-        body: formData
+        headers: { Authorization: `Bearer ${token}` },
+        body: fd,
       });
-    } catch (err) {
-      console.error('Evidence upload error:', err);
-    }
+    } catch (e) { console.error('[Evidence] Upload error:', e); }
   };
 
-  const createMockEvidenceUpload = async (type) => {
-    // Generate a simple mock text file or color placeholder
-    const blob = new Blob([`Mock emergency capture: ${type} at ${new Date().toISOString()}`], { type: 'text/plain' });
+  const createMockEvidenceUpload = (type) => {
+    const blob = new Blob([`Mock capture: ${type} @ ${new Date().toISOString()}`], { type: 'text/plain' });
     uploadEvidenceBlob(blob, type);
   };
 
@@ -507,7 +530,7 @@ export const EmergencyProvider = ({ children }) => {
       triggerEmergency,
       resolveEmergency,
       startSpeechRecognition,
-      stopSpeechRecognition
+      stopSpeechRecognition,
     }}>
       {children}
     </EmergencyContext.Provider>

@@ -109,24 +109,40 @@ export const EmergencyProvider = ({ children }) => {
     text.toLowerCase().replace(/[.,/#!$%^&*;:{}=\-_`~()?]/g, '').replace(/\s+/g, ' ').trim();
 
   const checkFuzzyMatch = (transcript, customWakeWord = '') => {
-    const normalized = normalizeText(transcript);
-    const targets = ['nova help me', 'hey nova', 'help', 'help me', 'emergency', 'sos', 'save me', 'i am in danger'];
-    if (customWakeWord) targets.push(normalizeText(customWakeWord));
+    const n = normalizeText(transcript);
+    console.log(`[Voice Guardian] Checking transcript: "${n}"`);
+
+    const targets = [
+      'nova help me',
+      'hey nova',
+      'nova',
+      'i am in danger',
+      'save me',
+      'emergency',
+      'help me',
+      'help',
+      'sos',
+    ];
+    if (customWakeWord) targets.unshift(normalizeText(customWakeWord));
 
     for (const target of targets) {
-      if (normalized.includes(target)) return target;
+      if (n.includes(target)) return target;
     }
 
     const phonetics = [
-      { target: 'nova help me', pattern: /no[var]+\s+help\s+me/i },
-      { target: 'hey nova', pattern: /hey\s+no[var]+/i },
-      { target: 'emergency', pattern: /emergen/i },
-      { target: 'sos', pattern: /s\s*o\s*s/i },
+      { target: 'nova help me', pattern: /no[vb][ao]\s+help\s+me/i },
+      { target: 'nova help me', pattern: /no[vb]a\s+help/i },
+      { target: 'hey nova',     pattern: /hey\s+no[vb][ao]/i },
+      { target: 'nova',         pattern: /no[vb][ao]/i },
+      { target: 'emergency',    pattern: /emergen/i },
+      { target: 'sos',          pattern: /\bs\s*[.\-]?\s*o\s*[.\-]?\s*s\b/i },
+      { target: 'save me',      pattern: /saf[e]?\s+me/i },
       { target: 'i am in danger', pattern: /danger/i },
-      { target: 'save me', pattern: /safe\s+me/i },
+      { target: 'help me',      pattern: /\bhelp\s+m[ea]\b/i },
+      { target: 'help',         pattern: /\bhelp\b/i },
     ];
     for (const { target, pattern } of phonetics) {
-      if (pattern.test(normalized)) return target;
+      if (pattern.test(n)) return target;
     }
     return null;
   };
