@@ -17,6 +17,7 @@ export const UserDashboard = () => {
   
   // Dashboard navigation tabs: dashboard, contacts, medical, routing, settings
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [toast, setToast] = useState(null);
   
   // Contacts state
   const [contacts, setContacts] = useState([]);
@@ -230,13 +231,24 @@ export const UserDashboard = () => {
   const triggerManualPanic = () => {
     if (isEmergency) {
       resolveEmergency();
+      setToast({ message: 'Emergency resolved successfully.', type: 'info' });
+      setTimeout(() => setToast(null), 4000);
     } else {
       triggerEmergency('manual');
+      setToast({ message: 'Emergency SOS Activated! Outbound alerts sent to your contacts.', type: 'success' });
+      setTimeout(() => setToast(null), 6000);
     }
   };
 
   return (
-    <div className="flex min-h-screen bg-[#07080d] text-slate-100 flex-col md:flex-row">
+    <div className="flex min-h-screen bg-[#07080d] text-slate-100 flex-col md:flex-row relative">
+      {/* Toast Notification */}
+      {toast && (
+        <div className="fixed top-6 right-6 z-50 p-4 bg-[#0f111a] border border-cyan-500/30 rounded-xl shadow-2xl flex items-center gap-3 animate-bounce">
+          <div className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
+          <span className="text-xs font-bold text-slate-100">{toast.message}</span>
+        </div>
+      )}
       {/* Side Navigation Bar */}
       <aside className="w-full md:w-64 bg-[#0f111a] border-b md:border-r border-slate-800 p-6 flex flex-col justify-between gap-8">
         <div className="flex flex-col gap-8">
@@ -328,7 +340,7 @@ export const UserDashboard = () => {
                 >
                   {isEmergency ? 'RESOLVE' : 'SOS'}
                 </button>
-                <span className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Hold for 2 seconds to trigger</span>
+                <span className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Click to trigger SOS</span>
               </div>
 
               {/* Voice recognition status */}
