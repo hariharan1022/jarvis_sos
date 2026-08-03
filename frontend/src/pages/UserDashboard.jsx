@@ -332,7 +332,7 @@ export const UserDashboard = () => {
               <div className="glass-panel p-8 flex flex-col items-center gap-6 text-center">
                 <h2 className="text-xl font-extrabold text-white">Quick Emergency SOS</h2>
                 <p className="text-xs text-slate-400 leading-relaxed max-w-xs">
-                  Pressing this button triggers live notification alerts, starts background recording, snaps images, and broadcasts coordinates.
+                  Pressing this button triggers live notification alerts and broadcasts coordinates.
                 </p>
                 <button 
                   onClick={triggerManualPanic} 
