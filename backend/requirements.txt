@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+passlib[bcrypt]
+pyjwt
+pydantic
+python-multipart
+websockets
+psycopg2-binary

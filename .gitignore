@@ -1,0 +1,31 @@
+# Credentials and Environment
+.env
+.env.local
+backend/.env
+backend/.env.local
+
+# Databases and Local Storage
+*.db
+backend/safenova.db
+backend/uploads/
+
+# Python Cache
+__pycache__/
+*.pyc
+backend/__pycache__/
+backend/app/__pycache__/
+backend/app/services/__pycache__/
+backend/app/routes/__pycache__/
+
+# Node / JS Dependencies & Builds
+node_modules/
+frontend/node_modules/
+frontend/dist/
+.svelte-kit/
+.next/
+dist/
+
+# IDEs
+.vscode/
+.idea/
+.DS_Store
