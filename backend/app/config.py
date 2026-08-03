@@ -29,6 +29,13 @@ class Settings:
     SMTP_USER: str = os.getenv("SMTP_USER", "")
     SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
     SMTP_FROM: str = os.getenv("SMTP_FROM", "")
+    
+    # Production Email Services
+    EMAIL_PROVIDER: str = os.getenv("EMAIL_PROVIDER", "smtp")  # 'smtp', 'resend', 'sendgrid'
+    RESEND_API_KEY: str = os.getenv("RESEND_API_KEY", "")
+    SENDGRID_API_KEY: str = os.getenv("SENDGRID_API_KEY", "")
+    SMTP_REPLY_TO: str = os.getenv("SMTP_REPLY_TO", "")
+    SMTP_RETURN_PATH: str = os.getenv("SMTP_RETURN_PATH", "")
 
     # Twilio Settings (for SMS & WhatsApp alerts)
     TWILIO_ACCOUNT_SID: str = os.getenv("TWILIO_ACCOUNT_SID", "")

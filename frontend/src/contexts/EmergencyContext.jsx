@@ -65,9 +65,11 @@ export const EmergencyProvider = ({ children }) => {
       recognition.lang = 'en-US';
 
       let isPermissionDenied = false;
+      let hasError = false;
 
       recognition.onstart = () => {
         setSpeechStatus('listening');
+        hasError = false;
       };
 
       recognition.onerror = (event) => {
@@ -76,6 +78,7 @@ export const EmergencyProvider = ({ children }) => {
           isPermissionDenied = true;
           setSpeechStatus('permission_denied');
         } else {
+          hasError = true;
           setSpeechStatus('error');
         }
       };
@@ -83,10 +86,21 @@ export const EmergencyProvider = ({ children }) => {
       recognition.onend = () => {
         // Continuous listening: restart if user is logged in, not in emergency, not blocked by permission, and not intentionally stopped
         if (user && !isEmergency && !isPermissionDenied && recognitionRef.current === recognition) {
-          try {
-            recognition.start();
-          } catch (e) {
-            // Already started
+          if (hasError) {
+            // Wait 5 seconds before retrying to prevent hot looping on network/mic errors
+            setTimeout(() => {
+              if (user && !isEmergency && !isPermissionDenied && recognitionRef.current === recognition) {
+                try {
+                  recognition.start();
+                } catch (e) {}
+              }
+            }, 5000);
+          } else {
+            try {
+              recognition.start();
+            } catch (e) {
+              // Already started
+            }
           }
         }
       };
@@ -94,8 +108,8 @@ export const EmergencyProvider = ({ children }) => {
       recognition.onresult = (event) => {
         const customWakeWord = user?.custom_wake_word?.toLowerCase() || '';
         const standardWakePhrases = [
-          'nova', 'hey nova', 'help me', 'i am in danger', 
-          'save me', 'emergency', 'guardian activate', 'help'
+          'nova', 'hey nova', 'hi nova', 'hey nowa', 'hey noah', 'hey nora',
+          'help', 'help me', 'save me', 'emergency', 'danger', 'guardian activate'
         ];
 
         for (let i = event.resultIndex; i < event.results.length; ++i) {
