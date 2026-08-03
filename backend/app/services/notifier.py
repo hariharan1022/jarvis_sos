@@ -178,21 +178,22 @@ class NotifierService:
             f"Maps: {maps_link}"
         )
         
-        email_subject = f"SafeNova Security Alert - Active Incident for {user_name}"
+        email_subject = f"Emergency Alert from {user_name} - Please Check Immediately"
         email_body = (
-            f"Dear Emergency Contact,\n\n"
-            f"This is an automated security dispatch from the SafeNova Guard network on behalf of: {user_name}.\n\n"
-            f"--- SECURITY REPORT DETAILS ---\n"
-            f"Incident Trigger: {session_details.get('type')}\n"
-            f"Last Reported Location: {session_details.get('address')}\n"
-            f"GPS Coordinates: {session_details.get('lat')}, {session_details.get('lng')}\n"
-            f"Device Battery Level: {session_details.get('battery')}%\n"
-            f"Signal Level: {session_details.get('signal')}\n"
-            f"Blood Group & Medical Card: {session_details.get('blood_group', 'N/A')} | Notes: {session_details.get('medical_notes', 'N/A')}\n\n"
-            f"--- EMERGENCY LOCAL CHANNELS ---\n"
-            f"Secure local tracking: {tracking_link}\n"
-            f"Map coordinate: {maps_link}\n\n"
-            f"This is a system-generated alert message. Please verify their safety."
+            f"Hi,\n\n"
+            f"I have triggered an emergency alert. Please check on me as soon as possible.\n\n"
+            f"Here are my current details:\n"
+            f"- My location: {session_details.get('address')}\n"
+            f"- GPS Coordinates: {session_details.get('lat')}, {session_details.get('lng')}\n"
+            f"- Device Battery: {session_details.get('battery')}%\n"
+            f"- Medical Info: {session_details.get('blood_group', 'N/A')} ({session_details.get('medical_notes', 'N/A')})\n\n"
+            f"You can track my live updates and location here:\n"
+            f"{tracking_link}\n\n"
+            f"Or view my position on Google Maps:\n"
+            f"{maps_link}\n\n"
+            f"Please reach out to me immediately.\n\n"
+            f"Best regards,\n"
+            f"{user_name}"
         )
 
         for contact in contacts:
