@@ -21,6 +21,41 @@ export const EmergencyProvider = ({ children }) => {
   const audioChunksRef = useRef([]);
   const lastTriggerTimeRef = useRef(0);
 
+  // ─── Diagnostic / Debug State ──────────────────────────────────────────────
+  const [debugLog, setDebugLog] = useState([]);
+  const [browserSupport, setBrowserSupport] = useState('Unknown');
+  const [browserInfo, setBrowserInfo] = useState('');
+  const [speechLanguage, setSpeechLanguage] = useState('en-US');
+  const [finalTranscript, setFinalTranscript] = useState('');
+
+  const addDebugLog = (msg) => {
+    console.log(`[Voice Guardian Debug] ${msg}`);
+    setDebugLog(prev => [msg, ...prev].slice(0, 50));
+  };
+
+  useEffect(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      setBrowserSupport('Supported');
+    } else {
+      setBrowserSupport('Unsupported');
+    }
+    
+    // Detect Chrome/Edge
+    const ua = navigator.userAgent;
+    if (ua.includes('Edg/')) {
+      setBrowserInfo('Edge');
+    } else if (ua.includes('Chrome/')) {
+      setBrowserInfo('Chrome');
+    } else if (ua.includes('Firefox/')) {
+      setBrowserInfo('Firefox');
+    } else if (ua.includes('Safari/')) {
+      setBrowserInfo('Safari');
+    } else {
+      setBrowserInfo('Other');
+    }
+  }, []);
+
   // ─── CRITICAL: Use refs for values accessed inside recognition callbacks ───
   // These refs are the fix for the stale-closure bug — recognition event
   // handlers capture refs (always current) instead of stale state variables.
@@ -151,13 +186,16 @@ export const EmergencyProvider = ({ children }) => {
   // ─── Mic permission + start ───────────────────────────────────────────────
   const requestMicPermissionAndStart = async () => {
     try {
+      addDebugLog('Requesting microphone permission...');
       console.log('[Voice Guardian] Requesting microphone permission...');
       await navigator.mediaDevices.getUserMedia({ audio: true });
+      addDebugLog('Microphone permission GRANTED');
       console.log('[Voice Guardian] Microphone permission GRANTED.');
       setMicPermissionGranted(true);
       setMicPermissionError(null);
       startSpeechRecognition();
     } catch (err) {
+      addDebugLog(`Microphone permission DENIED: ${err.name} - ${err.message}`);
       console.error('[Voice Guardian] Microphone permission DENIED:', err.name, err.message);
       setMicPermissionGranted(false);
       const msg =
@@ -175,6 +213,7 @@ export const EmergencyProvider = ({ children }) => {
   const startSpeechRecognition = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
+      addDebugLog('SpeechRecognition API not supported in this browser.');
       console.warn('[Voice Guardian] SpeechRecognition API not supported in this browser.');
       setSpeechStatus('unsupported');
       return;
@@ -193,14 +232,16 @@ export const EmergencyProvider = ({ children }) => {
     }
 
     try {
+      addDebugLog('Initializing SpeechRecognition instance...');
       const recognition = new SpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = true;
       recognition.maxAlternatives = 5;
-      recognition.lang = 'en-US';
+      recognition.lang = speechLanguage;
 
       // ── onstart ────────────────────────────────────────────────────────
       recognition.onstart = () => {
+        addDebugLog('✅ Recognition engine STARTED — listening for wake phrases');
         console.log('[Voice Guardian] ✅ Recognition engine STARTED — listening for wake phrases.');
         setSpeechStatus('listening');
         isRestartingRef.current = false;
@@ -208,6 +249,7 @@ export const EmergencyProvider = ({ children }) => {
 
       // ── onerror ────────────────────────────────────────────────────────
       recognition.onerror = (event) => {
+        addDebugLog(`❌ Recognition error: "${event.error}" - ${event.message || ''}`);
         console.error(`[Voice Guardian] ❌ Recognition error: "${event.error}"`, event.message || '');
         switch (event.error) {
           case 'not-allowed':
@@ -217,20 +259,25 @@ export const EmergencyProvider = ({ children }) => {
             setSpeechStatus('permission_denied');
             return; // no restart
           case 'no-speech':
+            addDebugLog('No speech detected — will auto-restart');
             console.log('[Voice Guardian] No speech detected — will auto-restart.');
             break;
           case 'network':
+            addDebugLog('Network error — will auto-restart');
             console.warn('[Voice Guardian] Network error — will auto-restart.');
             setSpeechStatus('error');
             break;
           case 'audio-capture':
+            addDebugLog('Mic capture error — will auto-restart');
             console.warn('[Voice Guardian] Mic capture error — will auto-restart.');
             setSpeechStatus('error');
             break;
           case 'aborted':
+            addDebugLog('Recognition aborted');
             console.log('[Voice Guardian] Recognition aborted.');
             break;
           default:
+            addDebugLog(`Unknown error: ${event.error}`);
             console.warn(`[Voice Guardian] Unknown error: ${event.error}`);
             setSpeechStatus('error');
         }
@@ -241,10 +288,12 @@ export const EmergencyProvider = ({ children }) => {
       // ── onend ─────────────────────────────────────────────────────────
       // KEY FIX: uses refs (not stale state) to decide whether to restart
       recognition.onend = () => {
+        addDebugLog('🔄 Recognition stream ended');
         console.log('[Voice Guardian] 🔄 Recognition stream ended.');
         if (enabledRef.current && userRef.current && !isEmergencyRef.current) {
           scheduleRestart();
         } else {
+          addDebugLog('Not restarting — guardian disabled or emergency active');
           console.log('[Voice Guardian] Not restarting — guardian disabled or emergency active.');
         }
       };
@@ -254,10 +303,15 @@ export const EmergencyProvider = ({ children }) => {
         let bestTranscript = '';
         let bestConfidence = 0;
         let hasMatch = false;
+        let finalChunk = '';
 
         // Iterate all new results since last resultIndex
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const result = event.results[i];
+          
+          if (result.isFinal) {
+            finalChunk += result[0].transcript;
+          }
 
           // Check all alternatives (maxAlternatives=5)
           for (let alt = 0; alt < result.length; alt++) {
@@ -279,6 +333,7 @@ export const EmergencyProvider = ({ children }) => {
               const matched = checkFuzzyMatch(text, customWakeWord);
               if (matched) {
                 hasMatch = true;
+                addDebugLog(`🚨 WAKE PHRASE DETECTED: "${matched}" — triggering SOS!`);
                 console.log(`[Voice Guardian] 🚨 WAKE PHRASE DETECTED: "${matched}" — triggering SOS!`);
                 setWakePhraseMatch(matched);
                 setLastWakePhrase(matched);
@@ -296,6 +351,10 @@ export const EmergencyProvider = ({ children }) => {
             }
           }
         }
+        
+        if (finalChunk) {
+          setFinalTranscript(prev => (prev + ' ' + finalChunk.trim()).trim().slice(-100)); // keep last 100 chars
+        }
 
         // Update live transcript display
         if (bestTranscript.trim()) {
@@ -310,14 +369,17 @@ export const EmergencyProvider = ({ children }) => {
       setTimeout(() => {
         try {
           recognition.start();
+          addDebugLog('📡 recognition.start() called.');
           console.log('[Voice Guardian] 📡 recognition.start() called.');
         } catch (e) {
+          addDebugLog(`start() threw: ${e.message}`);
           console.error('[Voice Guardian] start() threw:', e.message);
           scheduleRestart();
         }
       }, 100);
 
     } catch (e) {
+      addDebugLog(`Initialization error: ${e.message}`);
       console.error('[Voice Guardian] Initialization error:', e);
       setSpeechStatus('error');
     }
@@ -351,6 +413,7 @@ export const EmergencyProvider = ({ children }) => {
       recognitionRef.current = null;
     }
     setSpeechStatus('offline');
+    addDebugLog('🛑 Recognition stopped.');
     console.log('[Voice Guardian] 🛑 Recognition stopped.');
   };
 
@@ -396,6 +459,8 @@ export const EmergencyProvider = ({ children }) => {
     formData.append('signal_status', navigator.onLine ? 'Good' : 'Offline');
     formData.append('address', `Approx. near lat ${lat.toFixed(4)}, lng ${lng.toFixed(4)}`);
 
+    addDebugLog(`📡 Sending Backend SOS Request (${type})`);
+
     try {
       const res = await fetch(`${API_URL}/emergency/trigger`, {
         method: 'POST',
@@ -404,14 +469,17 @@ export const EmergencyProvider = ({ children }) => {
       });
       if (res.ok) {
         const session = await res.json();
+        addDebugLog(`✅ Backend SOS Acknowledged. ID: ${session.tracking_code}`);
         console.log('[Emergency] ✅ Backend acknowledged SOS. Session:', session.tracking_code);
         setActiveSession(session);
         setIsEmergency(true);
       } else {
+        addDebugLog(`❌ Backend SOS Error: ${res.status}`);
         console.error('[Emergency] Backend returned error:', res.status);
         setIsEmergency(true); // offline fallback
       }
     } catch (err) {
+      addDebugLog(`❌ Backend SOS Fetch Failed: ${err.message}`);
       console.error('[Emergency] Fetch failed:', err.message);
       setIsEmergency(true); // offline fallback
     }
@@ -515,6 +583,11 @@ export const EmergencyProvider = ({ children }) => {
 
   return (
     <EmergencyContext.Provider value={{
+      debugLog,
+      browserSupport,
+      browserInfo,
+      speechLanguage,
+      finalTranscript,
       isEmergency,
       activeSession,
       speechStatus,

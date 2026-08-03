@@ -4,6 +4,12 @@ import { Mic, MicOff } from 'lucide-react';
 
 export const VoiceAssistant = () => {
   const { 
+    debugLog,
+    browserSupport,
+    browserInfo,
+    speechLanguage,
+    finalTranscript,
+    isEmergency,
     speechStatus, 
     wakePhraseMatch, 
     liveTranscript,
@@ -17,6 +23,8 @@ export const VoiceAssistant = () => {
     startSpeechRecognition, 
     stopSpeechRecognition 
   } = useEmergency();
+  
+  const [showDebug, setShowDebug] = React.useState(false);
 
   const toggleSpeech = () => {
     if (voiceGuardianEnabled) {
@@ -83,7 +91,12 @@ export const VoiceAssistant = () => {
           <div className="w-5 h-5 bg-cyan-950/40 border border-cyan-500/30 rounded-md flex items-center justify-center text-cyan-400">
             <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
           </div>
-          <span className="text-xs font-bold uppercase tracking-wider text-slate-350">Nova AI Voice Guardian</span>
+          <span 
+            className="text-xs font-bold uppercase tracking-wider text-slate-350 cursor-pointer hover:text-cyan-400"
+            onClick={() => setShowDebug(!showDebug)}
+          >
+            Nova AI Voice Guardian {showDebug && ' [DEBUG]'}
+          </span>
         </div>
         
         {speechStatus === 'listening' && (
@@ -159,16 +172,64 @@ export const VoiceAssistant = () => {
       )}
 
       {/* HUD Debug Mode Telemetry */}
-      <div className="mt-2 pt-1.5 border-t border-slate-900/70 grid grid-cols-2 gap-1 text-[8px] font-bold text-slate-500 uppercase tracking-widest z-10 shrink-0">
-        <div className="flex flex-col gap-0.5">
-          <span>Mic State: <span className={micPermissionGranted ? 'text-emerald-450' : 'text-slate-500'}>{micPermissionGranted ? 'ONLINE' : 'OFFLINE'}</span></span>
-          <span className="truncate">Trigger Phrase: <span className="text-rose-450">{lastWakePhrase || 'NONE'}</span></span>
+      {showDebug ? (
+        <div className="mt-2 pt-2 border-t border-slate-700 grid grid-cols-1 gap-2 text-[9px] font-mono text-slate-300 z-10 shrink-0 max-h-48 overflow-y-auto">
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+            <div className="flex justify-between border-b border-slate-800 pb-1">
+              <span className="text-slate-500">Browser API:</span>
+              <span className={browserSupport === 'Supported' ? 'text-emerald-400' : 'text-rose-400'}>{browserSupport} ({browserInfo})</span>
+            </div>
+            <div className="flex justify-between border-b border-slate-800 pb-1">
+              <span className="text-slate-500">Mic Perm:</span>
+              <span className={micPermissionGranted ? 'text-emerald-400' : 'text-rose-400'}>{micPermissionGranted ? 'GRANTED' : 'DENIED'}</span>
+            </div>
+            <div className="flex justify-between border-b border-slate-800 pb-1">
+              <span className="text-slate-500">Rec Status:</span>
+              <span className={speechStatus === 'listening' ? 'text-emerald-400' : 'text-amber-400'}>{speechStatus.toUpperCase()}</span>
+            </div>
+            <div className="flex justify-between border-b border-slate-800 pb-1">
+              <span className="text-slate-500">Language:</span>
+              <span className="text-cyan-400">{speechLanguage}</span>
+            </div>
+            <div className="flex justify-between border-b border-slate-800 pb-1">
+              <span className="text-slate-500">Confidence:</span>
+              <span className="text-cyan-400">{(recognitionConfidence * 100).toFixed(1)}%</span>
+            </div>
+            <div className="flex justify-between border-b border-slate-800 pb-1">
+              <span className="text-slate-500">Last Trigger:</span>
+              <span className="text-rose-400">{lastWakePhrase || 'NONE'}</span>
+            </div>
+          </div>
+          
+          <div className="flex flex-col gap-1 mt-1 border-t border-slate-800 pt-1">
+            <span className="text-slate-500 uppercase font-bold text-[8px]">Live Transcript:</span>
+            <div className="bg-slate-950 p-1 rounded min-h-[1.5rem] break-words">{liveTranscript || '...'}</div>
+            <span className="text-slate-500 uppercase font-bold text-[8px]">Final Transcript:</span>
+            <div className="bg-slate-950 p-1 rounded min-h-[1.5rem] break-words text-emerald-400/80">{finalTranscript || '...'}</div>
+          </div>
+
+          <div className="flex flex-col gap-1 mt-1 border-t border-slate-800 pt-1">
+            <span className="text-slate-500 uppercase font-bold text-[8px]">Event Log (last 5):</span>
+            <div className="bg-slate-950 p-1 rounded flex flex-col gap-0.5">
+              {debugLog.slice(0, 5).map((log, i) => (
+                <div key={i} className="text-[8px] opacity-80">{log}</div>
+              ))}
+              {debugLog.length === 0 && <div className="text-[8px] opacity-40">No events yet...</div>}
+            </div>
+          </div>
         </div>
-        <div className="flex flex-col gap-0.5">
-          <span className="truncate text-right">Confidence: <span className="text-cyan-400 font-mono">{(recognitionConfidence * 100).toFixed(0)}%</span></span>
-          <span className="truncate text-right">Mode: <span className="text-cyan-400">{speechStatus}</span></span>
+      ) : (
+        <div className="mt-2 pt-1.5 border-t border-slate-900/70 grid grid-cols-2 gap-1 text-[8px] font-bold text-slate-500 uppercase tracking-widest z-10 shrink-0">
+          <div className="flex flex-col gap-0.5">
+            <span>Mic State: <span className={micPermissionGranted ? 'text-emerald-450' : 'text-slate-500'}>{micPermissionGranted ? 'ONLINE' : 'OFFLINE'}</span></span>
+            <span className="truncate">Trigger Phrase: <span className="text-rose-450">{lastWakePhrase || 'NONE'}</span></span>
+          </div>
+          <div className="flex flex-col gap-0.5">
+            <span className="truncate text-right">Confidence: <span className="text-cyan-400 font-mono">{(recognitionConfidence * 100).toFixed(0)}%</span></span>
+            <span className="truncate text-right">Mode: <span className="text-cyan-400">{speechStatus}</span></span>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Decorative shadow in background */}
       <div className="absolute right-0 bottom-0 opacity-5 pointer-events-none translate-x-4 translate-y-4">
