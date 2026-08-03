@@ -250,48 +250,48 @@ export const UserDashboard = () => {
         </div>
       )}
       {/* Side Navigation Bar */}
-      <aside className="w-full md:w-64 bg-[#0f111a] border-b md:border-r border-slate-800 p-6 flex flex-col justify-between gap-8">
-        <div className="flex flex-col gap-8">
+      <aside className="w-full md:w-64 bg-[#0f111a] border-b md:border-r border-slate-800 p-4 md:p-6 flex flex-row md:flex-col justify-between items-center md:items-stretch gap-4 md:gap-8 shrink-0">
+        <div className="flex flex-row md:flex-col items-center md:items-stretch justify-between w-full md:w-auto gap-4 md:gap-8">
           {/* Logo */}
-          <div className="flex items-center gap-3">
-            <Shield className="w-8 h-8 text-cyan-400" />
+          <div className="flex items-center gap-2 md:gap-3 shrink-0">
+            <Shield className="w-6 h-6 md:w-8 md:h-8 text-cyan-400" />
             <div>
-              <h1 className="text-xl font-extrabold text-white leading-none">SafeNova AI</h1>
-              <span className="text-[10px] text-cyan-400 font-bold uppercase tracking-widest">Active Guardian</span>
+              <h1 className="text-sm md:text-xl font-extrabold text-white leading-none">SafeNova AI</h1>
+              <span className="text-[9px] md:text-[10px] text-cyan-400 font-bold uppercase tracking-widest block md:inline">Active Guardian</span>
             </div>
           </div>
 
           {/* Links */}
-          <nav className="flex flex-col gap-1">
+          <nav className="flex flex-row md:flex-col gap-1 overflow-x-auto">
             <button 
               onClick={() => setActiveTab('dashboard')} 
-              className={`sidebar-link w-full text-left font-semibold cursor-pointer ${activeTab === 'dashboard' ? 'active' : ''}`}
+              className={`sidebar-link flex items-center gap-1.5 md:gap-3 py-2 px-3 md:py-3 md:px-4 rounded-xl text-xs md:text-sm font-semibold cursor-pointer ${activeTab === 'dashboard' ? 'active' : ''}`}
             >
-              <Shield className="w-5 h-5" /> Dashboard
+              <Shield className="w-4 h-4 md:w-5 md:h-5" /> <span className="hidden sm:inline">Dashboard</span>
             </button>
             <button 
               onClick={() => setActiveTab('routing')} 
-              className={`sidebar-link w-full text-left font-semibold cursor-pointer ${activeTab === 'routing' ? 'active' : ''}`}
+              className={`sidebar-link flex items-center gap-1.5 md:gap-3 py-2 px-3 md:py-3 md:px-4 rounded-xl text-xs md:text-sm font-semibold cursor-pointer ${activeTab === 'routing' ? 'active' : ''}`}
             >
-              <Map className="w-5 h-5" /> Safe Routing
+              <Map className="w-4 h-4 md:w-5 md:h-5" /> <span className="hidden sm:inline">Safe Routing</span>
             </button>
             <button 
               onClick={() => setActiveTab('contacts')} 
-              className={`sidebar-link w-full text-left font-semibold cursor-pointer ${activeTab === 'contacts' ? 'active' : ''}`}
+              className={`sidebar-link flex items-center gap-1.5 md:gap-3 py-2 px-3 md:py-3 md:px-4 rounded-xl text-xs md:text-sm font-semibold cursor-pointer ${activeTab === 'contacts' ? 'active' : ''}`}
             >
-              <Users className="w-5 h-5" /> SOS Contacts
+              <Users className="w-4 h-4 md:w-5 md:h-5" /> <span className="hidden sm:inline">SOS Contacts</span>
             </button>
             <button 
               onClick={() => setActiveTab('medical')} 
-              className={`sidebar-link w-full text-left font-semibold cursor-pointer ${activeTab === 'medical' ? 'active' : ''}`}
+              className={`sidebar-link flex items-center gap-1.5 md:gap-3 py-2 px-3 md:py-3 md:px-4 rounded-xl text-xs md:text-sm font-semibold cursor-pointer ${activeTab === 'medical' ? 'active' : ''}`}
             >
-              <Heart className="w-5 h-5" /> Medical Profile
+              <Heart className="w-4 h-4 md:w-5 md:h-5" /> <span className="hidden sm:inline">Medical Profile</span>
             </button>
           </nav>
         </div>
 
-        {/* User Card */}
-        <div className="flex flex-col gap-4 border-t border-slate-800 pt-6">
+        {/* User Card (Desktop only) */}
+        <div className="hidden md:flex flex-col gap-4 border-t border-slate-800 pt-6">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center border border-slate-700">
               <User className="text-cyan-400 w-5 h-5" />
@@ -305,6 +305,15 @@ export const UserDashboard = () => {
             <LogOut className="w-3.5 h-3.5" /> Sign Out Session
           </button>
         </div>
+
+        {/* Mobile Logout Button (Mobile only) */}
+        <button 
+          onClick={logout} 
+          className="flex md:hidden p-2 bg-slate-800/60 border border-slate-700/60 hover:bg-rose-950/20 rounded-lg text-rose-400 cursor-pointer shrink-0"
+          title="Sign Out"
+        >
+          <LogOut className="w-4 h-4" />
+        </button>
       </aside>
 
       {/* Main Panel */}
