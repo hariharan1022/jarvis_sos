@@ -130,7 +130,7 @@ class NotifierService:
             return
 
         import smtplib
-        import email.utils
+        from email.utils import formatdate, make_msgid
         from email.mime.text import MIMEText
         from email.mime.multipart import MIMEMultipart
 
@@ -139,8 +139,8 @@ class NotifierService:
             msg["From"] = settings.SMTP_FROM
             msg["To"] = email
             msg["Subject"] = subject
-            msg["Date"] = email.utils.formatdate(localtime=True)
-            msg["Message-ID"] = email.utils.make_msgid(domain=settings.SMTP_HOST)
+            msg["Date"] = formatdate(localtime=True)
+            msg["Message-ID"] = make_msgid(domain=settings.SMTP_HOST)
             msg.attach(MIMEText(message, "plain", "utf-8"))
 
             server = smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT)
