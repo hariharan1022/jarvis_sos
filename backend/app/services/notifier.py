@@ -6,6 +6,7 @@ import json
 import base64
 import asyncio
 from datetime import datetime, timedelta
+from .websocket_manager import manager
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("SafeNovaNotifier")
@@ -86,17 +87,37 @@ async def email_queue_worker():
             
             if success:
                 logger.info(f"Email queue item successfully delivered to {item['email']}")
+                await manager.broadcast_to_session(item.get('tracking_code', ''), {
+                    "type": "notification_status",
+                    "channel": "email",
+                    "status": "success",
+                    "recipient": item['email']
+                })
                 email_queue.task_done()
             else:
                 item["attempts"] += 1
                 if item["attempts"] >= 3:
                     logger.error(f"Email queue item failed permanently after 3 attempts to {item['email']}")
+                    await manager.broadcast_to_session(item.get('tracking_code', ''), {
+                        "type": "notification_status",
+                        "channel": "email",
+                        "status": "failed",
+                        "recipient": item['email'],
+                        "error": "Failed after 3 attempts"
+                    })
                     email_queue.task_done()
                 else:
                     # Exponential backoff retry: 5s, 15s, 45s
                     backoff = 5 * (3 ** (item["attempts"] - 1))
                     item["next_attempt"] = datetime.utcnow() + timedelta(seconds=backoff)
                     logger.warning(f"Retrying email to {item['email']} in {backoff}s (Attempt {item['attempts']}/3)")
+                    await manager.broadcast_to_session(item.get('tracking_code', ''), {
+                        "type": "notification_status",
+                        "channel": "email",
+                        "status": "retrying",
+                        "recipient": item['email'],
+                        "error": "Delivery failed, retrying"
+                    })
                     await email_queue.put(item)
                     
         except Exception as e:
@@ -187,7 +208,7 @@ class NotifierService:
             raise
 
     @staticmethod
-    async def send_email(email: str, subject: str, plain_message: str, html_message: str, priority: int = 1):
+    async def send_email(email: str, subject: str, plain_message: str, html_message: str, priority: int = 1, tracking_code: str = ''):
         """Enqueues an email to the background worker queue after validating the recipient."""
         if not validate_email_address(email):
             logger.error(f"Failed to queue email: Recipient address '{email}' is invalid.")
@@ -201,6 +222,7 @@ class NotifierService:
             "plain": plain_message,
             "html": html_message,
             "priority": priority,
+            "tracking_code": tracking_code,
             "attempts": 0,
             "next_attempt": None
         })
@@ -476,19 +498,34 @@ class NotifierService:
             if contact.notify_sms:
                 try:
                     await cls.send_sms(contact.phone, sms_body, contact.priority)
+                    await manager.broadcast_to_session(tracking_code, {
+                        "type": "notification_status", "channel": "sms", "status": "success", "recipient": contact.phone
+                    })
                 except Exception as e:
                     logger.error(f"Failed to send SMS to {contact.phone}: {e}")
+                    await manager.broadcast_to_session(tracking_code, {
+                        "type": "notification_status", "channel": "sms", "status": "failed", "recipient": contact.phone, "error": str(e)
+                    })
             if contact.notify_whatsapp:
                 whatsapp_phone = contact.whatsapp if contact.whatsapp else contact.phone
                 try:
                     await cls.send_whatsapp(whatsapp_phone, sms_body, contact.priority)
+                    await manager.broadcast_to_session(tracking_code, {
+                        "type": "notification_status", "channel": "whatsapp", "status": "success", "recipient": whatsapp_phone
+                    })
                 except Exception as e:
                     logger.error(f"Failed to send WhatsApp to {whatsapp_phone}: {e}")
+                    await manager.broadcast_to_session(tracking_code, {
+                        "type": "notification_status", "channel": "whatsapp", "status": "failed", "recipient": whatsapp_phone, "error": str(e)
+                    })
             if contact.notify_email:
                 try:
-                    await cls.send_email(contact.email, email_subject, email_plain, email_html, contact.priority)
+                    await cls.send_email(contact.email, email_subject, email_plain, email_html, contact.priority, tracking_code)
                 except Exception as e:
                     logger.error(f"Failed to send Email to {contact.email}: {e}")
+                    await manager.broadcast_to_session(tracking_code, {
+                        "type": "notification_status", "channel": "email", "status": "failed", "recipient": contact.email, "error": str(e)
+                    })
             if contact.notify_call:
                 try:
                     await cls.send_voice_call(contact.phone, f"Emergency alert. Your contact {user_name} is in danger. We have sent you a text with their live location.", contact.priority)

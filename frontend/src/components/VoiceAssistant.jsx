@@ -1,6 +1,6 @@
 import React from 'react';
 import { useEmergency } from '../contexts/EmergencyContext';
-import { Mic, MicOff } from 'lucide-react';
+import { Mic, MicOff, CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
 
 export const VoiceAssistant = () => {
   const { 
@@ -21,7 +21,8 @@ export const VoiceAssistant = () => {
     setVoiceGuardianEnabled,
     requestMicPermissionAndStart,
     startSpeechRecognition, 
-    stopSpeechRecognition 
+    stopSpeechRecognition,
+    sosState
   } = useEmergency();
   
   const [showDebug, setShowDebug] = React.useState(false);
@@ -108,61 +109,140 @@ export const VoiceAssistant = () => {
       </div>
 
       {/* Main Body Columns */}
-      <div className="flex justify-between items-center gap-4 z-10 mt-2 flex-1">
-        {/* Left Column: Wave & Text */}
-        <div className="flex-1 flex flex-col justify-center gap-3">
-          {/* Animated Wave */}
-          {details.showEq ? (
-            <div className="eq-container self-start w-full max-w-[280px]">
-              <div className="eq-bar" />
-              <div className="eq-bar" />
-              <div className="eq-bar" />
-              <div className="eq-bar" />
-              <div className="eq-bar" />
-              <div className="eq-bar" />
-              <div className="eq-bar" />
-              <div className="eq-bar" />
-              <div className="eq-bar" />
-              <div className="eq-bar" />
-              <div className="eq-bar" />
-              <div className="eq-bar" />
-              <div className="eq-bar" />
-              <div className="eq-bar" />
+      {isEmergency ? (
+        <div className="flex-1 flex flex-col justify-center gap-2 mt-3 z-10 bg-slate-950/40 p-2 rounded-lg border border-slate-900/60">
+          <div className="text-xs font-bold text-rose-400 uppercase tracking-widest border-b border-slate-800 pb-1 mb-1 flex items-center justify-between">
+            <span>Emergency Active</span>
+            <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+          </div>
+          
+          <div className="grid grid-cols-2 gap-2">
+            <div className="flex items-center gap-2 text-[10px] font-medium tracking-wide">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="text-emerald-100">Live Tracking Started</span>
             </div>
-          ) : (
-            <div className="h-10 w-full max-w-[280px] border border-dashed border-slate-800 rounded-xl flex items-center justify-center text-slate-500 font-semibold italic text-[10px]">
-              Voice Shield Offline
-            </div>
-          )}
 
-          {/* Trigger Instruction Text */}
-          <div className="flex flex-col gap-0.5 text-[11px] text-slate-450 leading-tight">
-            <span>Nova is listening. Say</span>
-            <span className="text-cyan-400 font-black tracking-wide text-xs">
-              “Nova Help Me” <span className="text-slate-400 font-medium text-[10px]">or</span> “Hey Nova”
-            </span>
+            <div className="flex items-center gap-2 text-[10px] font-medium tracking-wide">
+              {sosState?.locationAcquired ? (
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+              ) : (
+                <Loader2 className="w-3.5 h-3.5 text-cyan-500 animate-spin" />
+              )}
+              <span className={sosState?.locationAcquired ? "text-emerald-100" : "text-slate-300"}>Location Acquired</span>
+            </div>
+
+            <div className="flex items-center gap-2 text-[10px] font-medium tracking-wide">
+              {sosState?.emailSent === true ? (
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+              ) : sosState?.emailSent === false ? (
+                <AlertCircle className="w-3.5 h-3.5 text-rose-400" />
+              ) : sosState?.emailSent === 'retrying' ? (
+                <Loader2 className="w-3.5 h-3.5 text-amber-400 animate-spin" />
+              ) : (
+                <Loader2 className="w-3.5 h-3.5 text-cyan-500 animate-spin" />
+              )}
+              <span className={sosState?.emailSent === true ? 'text-emerald-100' : sosState?.emailSent === false ? 'text-rose-200' : 'text-slate-300'}>
+                {sosState?.emailSent === false ? 'Email Failed' : 'Email Alert'}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2 text-[10px] font-medium tracking-wide">
+              {sosState?.smsSent === true ? (
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+              ) : sosState?.smsSent === false ? (
+                <AlertCircle className="w-3.5 h-3.5 text-rose-400" />
+              ) : sosState?.smsSent === 'retrying' ? (
+                <Loader2 className="w-3.5 h-3.5 text-amber-400 animate-spin" />
+              ) : (
+                <Loader2 className="w-3.5 h-3.5 text-cyan-500 animate-spin" />
+              )}
+              <span className={sosState?.smsSent === true ? 'text-emerald-100' : sosState?.smsSent === false ? 'text-rose-200' : 'text-slate-300'}>
+                {sosState?.smsSent === false ? 'SMS Failed' : 'SMS Alert'}
+              </span>
+            </div>
+            
+            <div className="flex items-center gap-2 text-[10px] font-medium tracking-wide">
+              {sosState?.whatsappSent === true ? (
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+              ) : sosState?.whatsappSent === false ? (
+                <AlertCircle className="w-3.5 h-3.5 text-rose-400" />
+              ) : sosState?.whatsappSent === 'retrying' ? (
+                <Loader2 className="w-3.5 h-3.5 text-amber-400 animate-spin" />
+              ) : (
+                <Loader2 className="w-3.5 h-3.5 text-cyan-500 animate-spin" />
+              )}
+              <span className={sosState?.whatsappSent === true ? 'text-emerald-100' : sosState?.whatsappSent === false ? 'text-rose-200' : 'text-slate-300'}>
+                {sosState?.whatsappSent === false ? 'WhatsApp Failed' : 'WhatsApp Alert'}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2 text-[10px] font-medium tracking-wide">
+              {['emailSent', 'smsSent', 'whatsappSent'].every(k => sosState?.[k] === true) ? (
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+              ) : (
+                <Loader2 className="w-3.5 h-3.5 text-cyan-500 animate-spin" />
+              )}
+              <span className={['emailSent', 'smsSent', 'whatsappSent'].every(k => sosState?.[k] === true) ? "text-emerald-100" : "text-slate-300"}>Contacts Notified</span>
+            </div>
           </div>
         </div>
-
-        {/* Right Column: Dynamic Glowing Microphone Button */}
-        <div className="relative w-20 h-20 flex items-center justify-center shrink-0">
-          <div className="absolute w-16 h-16 rounded-full border border-cyan-500/10 animate-ping" style={{ animationDuration: '3s' }} />
-          <div className="absolute w-13 h-13 rounded-full border border-cyan-500/20" />
-          <div className="absolute w-18 h-18 rounded-full border border-dashed border-cyan-500/5 animate-[spin_40s_linear_infinite]" />
-          
-          <button 
-            onClick={toggleSpeech} 
-            className={`w-10 h-10 rounded-full flex items-center justify-center cursor-pointer transition-all duration-300 z-10 hover:scale-105 active:scale-95 ${voiceGuardianEnabled ? 'bg-cyan-950/60 border border-cyan-500/65 text-cyan-400 shadow-[0_0_15px_rgba(0,242,254,0.3)]' : 'bg-slate-900 border border-slate-800 text-slate-550'}`}
-            title={voiceGuardianEnabled ? 'Stop Listening' : 'Start Listening'}
-          >
-            {voiceGuardianEnabled ? (
-              <Mic className="w-4.5 h-4.5 text-cyan-400 animate-pulse" />
+      ) : (
+        <div className="flex justify-between items-center gap-4 z-10 mt-2 flex-1">
+          {/* Left Column: Wave & Text */}
+          <div className="flex-1 flex flex-col justify-center gap-3">
+            {/* Animated Wave */}
+            {details.showEq ? (
+              <div className="eq-container self-start w-full max-w-[280px]">
+                <div className="eq-bar" />
+                <div className="eq-bar" />
+                <div className="eq-bar" />
+                <div className="eq-bar" />
+                <div className="eq-bar" />
+                <div className="eq-bar" />
+                <div className="eq-bar" />
+                <div className="eq-bar" />
+                <div className="eq-bar" />
+                <div className="eq-bar" />
+                <div className="eq-bar" />
+                <div className="eq-bar" />
+                <div className="eq-bar" />
+                <div className="eq-bar" />
+              </div>
             ) : (
-              <MicOff className="w-4.5 h-4.5 text-slate-500" />
+              <div className="h-10 w-full max-w-[280px] border border-dashed border-slate-800 rounded-xl flex items-center justify-center text-slate-500 font-semibold italic text-[10px]">
+                Voice Shield Offline
+              </div>
             )}
-          </button>
+
+            {/* Trigger Instruction Text */}
+            <div className="flex flex-col gap-0.5 text-[11px] text-slate-450 leading-tight">
+              <span>Nova is listening. Say</span>
+              <span className="text-cyan-400 font-black tracking-wide text-xs">
+                “Nova Help Me” <span className="text-slate-400 font-medium text-[10px]">or</span> “Hey Nova”
+              </span>
+            </div>
+          </div>
+
+          {/* Right Column: Dynamic Glowing Microphone Button */}
+          <div className="relative w-20 h-20 flex items-center justify-center shrink-0">
+            <div className="absolute w-16 h-16 rounded-full border border-cyan-500/10 animate-ping" style={{ animationDuration: '3s' }} />
+            <div className="absolute w-13 h-13 rounded-full border border-cyan-500/20" />
+            <div className="absolute w-18 h-18 rounded-full border border-dashed border-cyan-500/5 animate-[spin_40s_linear_infinite]" />
+            
+            <button 
+              onClick={toggleSpeech} 
+              className={`w-10 h-10 rounded-full flex items-center justify-center cursor-pointer transition-all duration-300 z-10 hover:scale-105 active:scale-95 ${voiceGuardianEnabled ? 'bg-cyan-950/60 border border-cyan-500/65 text-cyan-400 shadow-[0_0_15px_rgba(0,242,254,0.3)]' : 'bg-slate-900 border border-slate-800 text-slate-550'}`}
+              title={voiceGuardianEnabled ? 'Stop Listening' : 'Start Listening'}
+            >
+              {voiceGuardianEnabled ? (
+                <Mic className="w-4.5 h-4.5 text-cyan-400 animate-pulse" />
+              ) : (
+                <MicOff className="w-4.5 h-4.5 text-slate-500" />
+              )}
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Live Transcript Stream HUD */}
       {liveTranscript && (

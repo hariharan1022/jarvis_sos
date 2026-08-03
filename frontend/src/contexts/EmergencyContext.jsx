@@ -16,10 +16,20 @@ export const EmergencyProvider = ({ children }) => {
   const [micPermissionError, setMicPermissionError] = useState(null);
   const [voiceGuardianEnabled, setVoiceGuardianEnabled] = useState(true);
 
+  // ─── SOS Workflow State ────────────────────────────────────────────────────
+  const [sosState, setSosState] = useState({
+    locationAcquired: false,
+    smsSent: null,
+    emailSent: null,
+    whatsappSent: null,
+    callSent: null
+  });
+
   const locationIntervalRef = useRef(null);
   const audioRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
   const lastTriggerTimeRef = useRef(0);
+  const wsRef = useRef(null);
 
   // ─── Diagnostic / Debug State ──────────────────────────────────────────────
   const [debugLog, setDebugLog] = useState([]);
@@ -84,6 +94,18 @@ export const EmergencyProvider = ({ children }) => {
     };
   }, [user, voiceGuardianEnabled]);
 
+  // ─── TTS Helper ─────────────────────────────────────────────────────────
+  const speakFeedback = useCallback((text) => {
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel(); // clear previous
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 1.0;
+      utterance.pitch = 1.0;
+      utterance.lang = 'en-US';
+      window.speechSynthesis.speak(utterance);
+    }
+  }, []);
+
   // ─── Location streaming during emergency ─────────────────────────────────
   useEffect(() => {
     if (isEmergency && activeSession) {
@@ -91,14 +113,74 @@ export const EmergencyProvider = ({ children }) => {
       startEvidenceRecording();
       captureCameraSnapshot('image_front');
       setTimeout(() => captureCameraSnapshot('image_rear'), 2000);
+      
+      // Connect WebSocket to track notification delivery status
+      const wsUrl = API_URL.replace('http', 'ws');
+      const ws = new WebSocket(`${wsUrl}/ws/track/${activeSession.tracking_code}`);
+      
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'notification_status') {
+            const statusVal = data.status === 'success' ? true : data.status === 'retrying' ? 'retrying' : false;
+            setSosState(prev => {
+              const next = { ...prev, [`${data.channel}Sent`]: statusVal };
+              
+              // Trigger TTS for failures
+              if (data.status === 'failed') {
+                speakFeedback(`${data.channel} delivery failed.`);
+              } else if (data.status === 'retrying') {
+                speakFeedback(`${data.channel} delivery failed. Retrying.`);
+              }
+              
+              // Check if all requested channels have successfully sent
+              const allSuccess = ['smsSent', 'emailSent', 'whatsappSent', 'callSent'].every(
+                key => next[key] === null || next[key] === true
+              );
+              
+              // We only want to say success ONCE when they transition to all success.
+              // This is a bit tricky to track cleanly here without a ref, 
+              // but we will do it if there's at least one true and no false/retrying
+              const hasTrue = ['smsSent', 'emailSent', 'whatsappSent', 'callSent'].some(key => next[key] === true);
+              const hasPending = ['smsSent', 'emailSent', 'whatsappSent', 'callSent'].some(key => next[key] === 'retrying' || next[key] === false);
+              
+              if (hasTrue && !hasPending) {
+                // To avoid repeating, we can check if the previous state wasn't all success
+                const prevAllSuccess = ['smsSent', 'emailSent', 'whatsappSent', 'callSent'].every(
+                  key => prev[key] === null || prev[key] === true
+                );
+                const prevHasTrue = ['smsSent', 'emailSent', 'whatsappSent', 'callSent'].some(key => prev[key] === true);
+                if (!(prevAllSuccess && prevHasTrue)) {
+                  speakFeedback("Emergency alert has been sent successfully. Your trusted contacts have been notified. Your live location is being shared. Stay calm, help is on the way.");
+                }
+              }
+              
+              return next;
+            });
+          }
+        } catch (e) { console.error('WS parsing error:', e); }
+      };
+      wsRef.current = ws;
+
     } else {
       if (locationIntervalRef.current) {
         clearInterval(locationIntervalRef.current);
         locationIntervalRef.current = null;
       }
       stopEvidenceRecording();
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
     }
-  }, [isEmergency, activeSession]);
+    
+    return () => {
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+    };
+  }, [isEmergency, activeSession, API_URL, speakFeedback]);
 
   // ─── Text normalization ───────────────────────────────────────────────────
   const normalizeText = (text) =>
@@ -431,6 +513,15 @@ export const EmergencyProvider = ({ children }) => {
     lastTriggerTimeRef.current = now;
     console.log(`[Emergency] 🚨 Triggering emergency — type: "${type}", phrase: "${wakeWord}"`);
 
+    // Reset SOS Tracking State
+    setSosState({
+      locationAcquired: false,
+      smsSent: null,
+      emailSent: null,
+      whatsappSent: null,
+      callSent: null
+    });
+
     let batteryLevel = 100;
     try {
       const bat = await navigator.getBattery();
@@ -440,10 +531,12 @@ export const EmergencyProvider = ({ children }) => {
     navigator.geolocation.getCurrentPosition(
       async ({ coords: { latitude, longitude } }) => {
         console.log(`[Emergency] GPS acquired: ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`);
+        setSosState(prev => ({ ...prev, locationAcquired: true }));
         await _sendTriggerRequest(latitude, longitude, batteryLevel, type, wakeWord);
       },
       (err) => {
         console.warn('[Emergency] GPS unavailable, using fallback coords:', err.message);
+        speakFeedback("I couldn't get your exact location. Retrying with approximate coordinates.");
         _sendTriggerRequest(12.9716, 77.5946, batteryLevel, type, wakeWord);
       },
       { enableHighAccuracy: true, timeout: 8000 }
@@ -598,6 +691,7 @@ export const EmergencyProvider = ({ children }) => {
       micPermissionGranted,
       micPermissionError,
       voiceGuardianEnabled,
+      sosState,
       setVoiceGuardianEnabled,
       requestMicPermissionAndStart,
       triggerEmergency,
