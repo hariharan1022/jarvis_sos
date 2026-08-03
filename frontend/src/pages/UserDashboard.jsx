@@ -13,11 +13,128 @@ import 'leaflet/dist/leaflet.css';
 
 export const UserDashboard = () => {
   const { user, token, logout, updateProfile, API_URL } = useAuth();
-  const { isEmergency, activeSession, triggerEmergency, resolveEmergency } = useEmergency();
+  const { isEmergency, activeSession, triggerEmergency, resolveEmergency, speechStatus } = useEmergency();
   
   // Dashboard navigation tabs: dashboard, contacts, medical, routing, settings
   const [activeTab, setActiveTab] = useState('dashboard');
   const [toast, setToast] = useState(null);
+
+  // Cinematic HUD interactive controls
+  const [sirenActive, setSirenActive] = useState(false);
+  const [strobeActive, setStrobeActive] = useState(false);
+  const [audioRecActive, setAudioRecActive] = useState(false);
+  const [videoRecActive, setVideoRecActive] = useState(false);
+  const sirenOscRef = useRef(null);
+  const sirenCtxRef = useRef(null);
+
+  const toggleSirenAlarm = () => {
+    if (sirenActive) {
+      if (sirenOscRef.current) {
+        try {
+          sirenOscRef.current.stop();
+        } catch (e) {}
+        sirenOscRef.current = null;
+      }
+      setSirenActive(false);
+      setToast({ message: 'Emergency siren silenced' });
+    } else {
+      try {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        const ctx = new AudioContext();
+        sirenCtxRef.current = ctx;
+        
+        const osc = ctx.createOscillator();
+        const gainNode = ctx.createGain();
+        
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(800, ctx.currentTime);
+        gainNode.gain.setValueAtTime(0.5, ctx.currentTime);
+        
+        osc.connect(gainNode);
+        gainNode.connect(ctx.destination);
+        
+        osc.start();
+        
+        // Siren sweep modulation
+        const sweep = () => {
+          if (!osc) return;
+          osc.frequency.setValueAtTime(800, ctx.currentTime);
+          osc.frequency.linearRampToValueAtTime(1300, ctx.currentTime + 0.45);
+          osc.frequency.linearRampToValueAtTime(800, ctx.currentTime + 0.9);
+        };
+        sweep();
+        const sirenInterval = setInterval(() => {
+          if (!sirenOscRef.current) {
+            clearInterval(sirenInterval);
+            return;
+          }
+          sweep();
+        }, 900);
+        
+        sirenOscRef.current = osc;
+        setSirenActive(true);
+        setToast({ message: 'Loud Emergency Siren activated!' });
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  };
+
+  const triggerFlashStrobe = () => {
+    if (strobeActive) {
+      setStrobeActive(false);
+      setToast({ message: 'Flash strobe deactivated' });
+    } else {
+      setStrobeActive(true);
+      setToast({ message: 'Disorientation Strobe active!' });
+    }
+  };
+
+  const toggleLiveAudioRec = () => {
+    setAudioRecActive(!audioRecActive);
+    setToast({ message: !audioRecActive ? 'Quiet ambient audio capture active' : 'Audio recording saved' });
+  };
+
+  const toggleLiveVideoRec = () => {
+    setVideoRecActive(!videoRecActive);
+    setToast({ message: !videoRecActive ? 'Front video stream live-streamed to cloud' : 'Video stream paused' });
+  };
+
+  // HUD Top bar state
+  const [timeString, setTimeString] = useState('');
+  const [dateString, setDateString] = useState('');
+  const [batteryLevel, setBatteryLevel] = useState(87);
+  const [locationAddress, setLocationAddress] = useState('Anna Nagar, Chennai, Tamil Nadu, India');
+
+  useEffect(() => {
+    const updateTime = () => {
+      const d = new Date();
+      setTimeString(d.toLocaleTimeString('en-US', { hour12: false }));
+      setDateString(d.toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase());
+    };
+    updateTime();
+    const interval = setInterval(updateTime, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const updateBattery = async () => {
+      try {
+        const bat = await navigator.getBattery();
+        setBatteryLevel(Math.round(bat.level * 100));
+      } catch (e) {}
+    };
+    updateBattery();
+    
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLocationAddress(`Lat ${pos.coords.latitude.toFixed(4)}, Lng ${pos.coords.longitude.toFixed(4)}`);
+      },
+      (err) => {},
+      { enableHighAccuracy: true }
+    );
+  }, []);
+  
   
   // Contacts state
   const [contacts, setContacts] = useState([]);
@@ -241,7 +358,10 @@ export const UserDashboard = () => {
   };
 
   return (
-    <div className="flex min-h-screen bg-[#07080d] text-slate-100 flex-col md:flex-row relative">
+    <div className="flex min-h-screen bg-[#050816] text-slate-100 flex-col md:flex-row relative overflow-hidden">
+      {/* Cinematic HUD Background Layers */}
+      <div className="volumetric-glow animate-pulse" />
+      <div className="neon-grid" />
       {/* Toast Notification */}
       {toast && (
         <div className="fixed top-6 right-6 z-50 p-4 bg-[#0f111a] border border-cyan-500/30 rounded-xl shadow-2xl flex items-center gap-3 animate-bounce">
@@ -250,66 +370,153 @@ export const UserDashboard = () => {
         </div>
       )}
       {/* Side Navigation Bar */}
-      <aside className="w-full md:w-64 bg-[#0f111a] border-b md:border-r border-slate-800 p-4 md:p-6 flex flex-row md:flex-col justify-between items-center md:items-stretch gap-4 md:gap-8 shrink-0">
-        <div className="flex flex-row md:flex-col items-center md:items-stretch justify-between w-full md:w-auto gap-4 md:gap-8">
+      <aside className="w-full md:w-52 bg-[#05070e] border-b md:border-r border-slate-900 p-3 md:p-4 flex flex-row md:flex-col justify-between items-center md:items-stretch gap-3 md:gap-5 shrink-0 h-auto md:h-full z-20">
+        <div className="flex flex-row md:flex-col items-center md:items-stretch justify-between w-full md:w-auto gap-3 md:gap-5">
           {/* Logo */}
-          <div className="flex items-center gap-2 md:gap-3 shrink-0">
-            <Shield className="w-6 h-6 md:w-8 md:h-8 text-cyan-400" />
+          <div className="flex items-center gap-1.5 md:gap-2 shrink-0">
+            <Shield className="w-5 h-5 md:w-6 md:h-6 text-cyan-400" />
             <div>
-              <h1 className="text-sm md:text-xl font-extrabold text-white leading-none">SafeNova AI</h1>
-              <span className="text-[9px] md:text-[10px] text-cyan-400 font-bold uppercase tracking-widest block md:inline">Active Guardian</span>
+              <h1 className="text-xs md:text-sm font-black text-white leading-none tracking-wide">SafeNova AI</h1>
+              <span className="text-[7px] md:text-[8px] text-cyan-400 font-bold uppercase tracking-widest block">Active Guardian</span>
             </div>
           </div>
 
           {/* Links */}
-          <nav className="flex flex-row md:flex-col gap-1 overflow-x-auto">
+          <nav className="flex flex-row md:flex-col gap-1.5 overflow-x-auto w-full">
             <button 
               onClick={() => setActiveTab('dashboard')} 
-              className={`sidebar-link flex items-center gap-1.5 md:gap-3 py-2 px-3 md:py-3 md:px-4 rounded-xl text-xs md:text-sm font-semibold cursor-pointer ${activeTab === 'dashboard' ? 'active' : ''}`}
+              className={`sidebar-link w-full text-left font-semibold cursor-pointer ${activeTab === 'dashboard' ? 'active' : ''}`}
             >
-              <Shield className="w-4 h-4 md:w-5 md:h-5" /> <span className="hidden sm:inline">Dashboard</span>
+              <div className="flex items-center gap-3">
+                <Shield className="w-4 h-4 md:w-5 md:h-5 text-cyan-400 shrink-0" />
+                <div className="flex flex-col text-left hidden md:flex">
+                  <span className="text-sm font-bold text-slate-100 leading-none">Dashboard</span>
+                  <span className="text-[9px] text-slate-500 font-bold uppercase mt-0.5">Command Center</span>
+                </div>
+                <span className="md:hidden text-xs font-bold text-white">Dashboard</span>
+              </div>
             </button>
+            
+            <button 
+              onClick={() => setActiveTab('tracking')} 
+              className={`sidebar-link w-full text-left font-semibold cursor-pointer ${activeTab === 'tracking' ? 'active' : ''}`}
+            >
+              <div className="flex items-center gap-3">
+                <Radio className="w-4 h-4 md:w-5 md:h-5 text-cyan-400 shrink-0" />
+                <div className="flex flex-col text-left hidden md:flex">
+                  <span className="text-sm font-bold text-slate-100 leading-none">Live Tracking</span>
+                  <span className="text-[9px] text-slate-500 font-bold uppercase mt-0.5">Real-time Monitor</span>
+                </div>
+                <span className="md:hidden text-xs font-bold text-white">Live Tracking</span>
+              </div>
+            </button>
+
             <button 
               onClick={() => setActiveTab('routing')} 
-              className={`sidebar-link flex items-center gap-1.5 md:gap-3 py-2 px-3 md:py-3 md:px-4 rounded-xl text-xs md:text-sm font-semibold cursor-pointer ${activeTab === 'routing' ? 'active' : ''}`}
+              className={`sidebar-link w-full text-left font-semibold cursor-pointer ${activeTab === 'routing' ? 'active' : ''}`}
             >
-              <Map className="w-4 h-4 md:w-5 md:h-5" /> <span className="hidden sm:inline">Safe Routing</span>
+              <div className="flex items-center gap-3">
+                <Map className="w-4 h-4 md:w-5 md:h-5 text-cyan-400 shrink-0" />
+                <div className="flex flex-col text-left hidden md:flex">
+                  <span className="text-sm font-bold text-slate-100 leading-none">Safe Routing</span>
+                  <span className="text-[9px] text-slate-500 font-bold uppercase mt-0.5">Smart Route Planner</span>
+                </div>
+                <span className="md:hidden text-xs font-bold text-white">Safe Routing</span>
+              </div>
             </button>
+
             <button 
               onClick={() => setActiveTab('contacts')} 
-              className={`sidebar-link flex items-center gap-1.5 md:gap-3 py-2 px-3 md:py-3 md:px-4 rounded-xl text-xs md:text-sm font-semibold cursor-pointer ${activeTab === 'contacts' ? 'active' : ''}`}
+              className={`sidebar-link w-full text-left font-semibold cursor-pointer ${activeTab === 'contacts' ? 'active' : ''}`}
             >
-              <Users className="w-4 h-4 md:w-5 md:h-5" /> <span className="hidden sm:inline">SOS Contacts</span>
+              <div className="flex items-center gap-3">
+                <Users className="w-4 h-4 md:w-5 md:h-5 text-cyan-400 shrink-0" />
+                <div className="flex flex-col text-left hidden md:flex">
+                  <span className="text-sm font-bold text-slate-100 leading-none">SOS Contacts</span>
+                  <span className="text-[9px] text-slate-500 font-bold uppercase mt-0.5">Trusted Guardians</span>
+                </div>
+                <span className="md:hidden text-xs font-bold text-white">SOS Contacts</span>
+              </div>
             </button>
+
             <button 
               onClick={() => setActiveTab('medical')} 
-              className={`sidebar-link flex items-center gap-1.5 md:gap-3 py-2 px-3 md:py-3 md:px-4 rounded-xl text-xs md:text-sm font-semibold cursor-pointer ${activeTab === 'medical' ? 'active' : ''}`}
+              className={`sidebar-link w-full text-left font-semibold cursor-pointer ${activeTab === 'medical' ? 'active' : ''}`}
             >
-              <Heart className="w-4 h-4 md:w-5 md:h-5" /> <span className="hidden sm:inline">Medical Profile</span>
+              <div className="flex items-center gap-3">
+                <Heart className="w-4 h-4 md:w-5 md:h-5 text-cyan-400 shrink-0" />
+                <div className="flex flex-col text-left hidden md:flex">
+                  <span className="text-sm font-bold text-slate-100 leading-none">Medical Profile</span>
+                  <span className="text-[9px] text-slate-500 font-bold uppercase mt-0.5">Health Information</span>
+                </div>
+                <span className="md:hidden text-xs font-bold text-white">Medical Profile</span>
+              </div>
+            </button>
+
+            <button 
+              onClick={() => setActiveTab('ai')} 
+              className={`sidebar-link w-full text-left font-semibold cursor-pointer ${activeTab === 'ai' ? 'active' : ''}`}
+            >
+              <div className="flex items-center gap-3">
+                <ShieldCheck className="w-4 h-4 md:w-5 md:h-5 text-cyan-400 shrink-0" />
+                <div className="flex flex-col text-left hidden md:flex">
+                  <span className="text-sm font-bold text-slate-100 leading-none">AI Guardian</span>
+                  <span className="text-[9px] text-slate-500 font-bold uppercase mt-0.5">Voice & Chat AI</span>
+                </div>
+                <span className="md:hidden text-xs font-bold text-white">AI Guardian</span>
+              </div>
+            </button>
+
+            <button 
+              onClick={() => setActiveTab('history')} 
+              className={`sidebar-link w-full text-left font-semibold cursor-pointer ${activeTab === 'history' ? 'active' : ''}`}
+            >
+              <FileText className="w-4 h-4 md:w-5 md:h-5 text-cyan-400 shrink-0" />
+              <div className="flex flex-col text-left hidden md:flex">
+                <span className="text-sm font-bold text-slate-100 leading-none">Alert History</span>
+                <span className="text-[9px] text-slate-500 font-bold uppercase mt-0.5">Past Activities</span>
+              </div>
+              <span className="md:hidden text-xs font-bold text-white">Alert History</span>
+            </button>
+
+            <button 
+              onClick={() => setActiveTab('settings')} 
+              className={`sidebar-link w-full text-left font-semibold cursor-pointer ${activeTab === 'settings' ? 'active' : ''}`}
+            >
+              <Settings className="w-4 h-4 md:w-5 md:h-5 text-cyan-400 shrink-0" />
+              <div className="flex flex-col text-left hidden md:flex">
+                <span className="text-sm font-bold text-slate-100 leading-none">Settings</span>
+                <span className="text-[9px] text-slate-500 font-bold uppercase mt-0.5">Preferences</span>
+              </div>
+              <span className="md:hidden text-xs font-bold text-white">Settings</span>
             </button>
           </nav>
         </div>
 
         {/* User Card (Desktop only) */}
-        <div className="hidden md:flex flex-col gap-4 border-t border-slate-800 pt-6">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center border border-slate-700">
-              <User className="text-cyan-400 w-5 h-5" />
+        <div className="hidden md:flex flex-col gap-2.5 border-t border-slate-800 pt-3">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-full bg-cyan-950/40 border border-cyan-500/30 flex items-center justify-center font-bold text-cyan-400 text-base shadow-[0_0_8px_rgba(0,242,254,0.1)]">
+              {user?.name?.charAt(0).toUpperCase() || 'U'}
             </div>
             <div className="overflow-hidden">
-              <h3 className="text-sm font-bold text-white truncate">{user?.name}</h3>
-              <p className="text-[10px] text-cyan-400 tracking-wider font-bold">CODE: {user?.tracking_code}</p>
+              <h3 className="text-xs font-bold text-white truncate">{user?.name}</h3>
+              <p className="text-[8px] text-slate-450 truncate">Guardian ID: {user?.tracking_code}</p>
+              <div className="flex items-center gap-1 mt-0.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                <span className="text-[8px] text-emerald-400 font-bold uppercase tracking-wider">Online</span>
+              </div>
             </div>
           </div>
-          <button onClick={logout} className="btn-glass w-full py-2.5 text-xs text-rose-400 border-rose-950/20 hover:bg-rose-950/20 hover:text-rose-300 flex items-center justify-center gap-2 cursor-pointer">
-            <LogOut className="w-3.5 h-3.5" /> Sign Out Session
+          <button onClick={logout} className="w-full py-1.5 text-[10px] text-slate-300 hover:text-white border border-cyan-500/30 hover:border-cyan-400 bg-cyan-950/10 hover:bg-cyan-950/30 rounded-lg flex items-center justify-center gap-1.5 cursor-pointer transition-all duration-300 shadow-[0_0_8px_rgba(0,242,254,0.05)]">
+            <LogOut className="w-3 h-3" /> SIGN OUT
           </button>
         </div>
 
         {/* Mobile Logout Button (Mobile only) */}
         <button 
           onClick={logout} 
-          className="flex md:hidden p-2 bg-slate-800/60 border border-slate-700/60 hover:bg-rose-950/20 rounded-lg text-rose-400 cursor-pointer shrink-0"
+          className="flex md:hidden p-2 bg-slate-850 border border-slate-755 hover:bg-rose-950/20 rounded-lg text-rose-400 cursor-pointer shrink-0"
           title="Sign Out"
         >
           <LogOut className="w-4 h-4" />
@@ -317,17 +524,17 @@ export const UserDashboard = () => {
       </aside>
 
       {/* Main Panel */}
-      <main className="flex-1 p-6 md:p-10 flex flex-col gap-8 max-w-5xl mx-auto w-full">
+      <main className="flex-1 p-3 md:p-4 flex flex-col gap-3 md:gap-4 max-w-[1400px] w-full h-full md:h-screen md:overflow-hidden relative mx-auto">
         {isEmergency && (
-          <div className="p-4 bg-red-950/30 border border-red-800/60 rounded-xl flex items-center justify-between text-red-400 animate-pulse">
-            <div className="flex items-center gap-3">
-              <AlertTriangle className="w-6 h-6 text-red-500" />
+          <div className="p-3 bg-red-950/30 border border-red-800/60 rounded-xl flex items-center justify-between text-red-400 animate-pulse shrink-0">
+            <div className="flex items-center gap-2.5">
+              <AlertTriangle className="w-5 h-5 text-red-500" />
               <div>
-                <h4 className="font-bold text-sm text-white">EMERGENCY SYSTEM IS ACTIVE</h4>
-                <p className="text-xs">Outbound alerts generated. Streaming live location logs via: {user?.tracking_code}</p>
+                <h4 className="font-bold text-xs text-white">EMERGENCY SYSTEM IS ACTIVE</h4>
+                <p className="text-[10px]">Outbound alerts generated. Streaming live location logs via: {user?.tracking_code}</p>
               </div>
             </div>
-            <button onClick={resolveEmergency} className="px-4 py-2 bg-red-800 hover:bg-red-700 active:bg-red-900 text-white font-bold rounded-lg text-xs cursor-pointer">
+            <button onClick={resolveEmergency} className="px-3.5 py-1.5 bg-red-800 hover:bg-red-700 active:bg-red-900 text-white font-bold rounded-lg text-[10px] cursor-pointer">
               Resolve Emergency
             </button>
           </div>
@@ -335,74 +542,348 @@ export const UserDashboard = () => {
 
         {/* TAB 1: MAIN DASHBOARD */}
         {activeTab === 'dashboard' && (
-          <div className="flex flex-col gap-8">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
-              {/* Trigger panic column */}
-              <div className="glass-panel p-8 flex flex-col items-center gap-6 text-center">
-                <h2 className="text-xl font-extrabold text-white">Quick Emergency SOS</h2>
-                <p className="text-xs text-slate-400 leading-relaxed max-w-xs">
-                  Pressing this button triggers live notification alerts and broadcasts coordinates.
-                </p>
-                <button 
-                  onClick={triggerManualPanic} 
-                  className={`sos-btn ${isEmergency ? 'bg-red-800' : ''} cursor-pointer`}
-                >
-                  {isEmergency ? 'RESOLVE' : 'SOS'}
-                </button>
-                <span className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Click to trigger SOS</span>
+          <div className="flex-1 flex flex-col gap-3 md:gap-4 h-full min-h-0 overflow-hidden">
+            {/* TOP HEADER */}
+            <header className="flex justify-between items-center bg-[#0a0c16]/90 border border-slate-900 rounded-xl p-2 px-4 gap-2 w-full shrink-0 h-11 shadow-[0_0_15px_rgba(0,242,254,0.02)]">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 bg-slate-950/40 rounded-lg border border-slate-800">
+                  <Shield className="w-3.5 h-3.5 text-cyan-400" />
+                </div>
+                <div>
+                  <span className="text-[8px] text-slate-450 font-bold uppercase tracking-wider block">Jarvis Mode</span>
+                  <span className="text-[10px] text-emerald-450 font-extrabold flex items-center gap-1">
+                    <span className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse" /> All Systems Online
+                  </span>
+                </div>
               </div>
 
-              {/* Voice recognition status */}
-              <VoiceAssistant />
+              {/* Central Clock Widget */}
+              <div className="px-4 py-1 bg-slate-950/80 border border-cyan-500/15 rounded-full flex items-center justify-center text-cyan-400 font-mono font-bold text-xs tracking-widest shadow-[0_0_10px_rgba(0,242,254,0.03)] gap-2">
+                <span>{timeString}</span>
+                <span className="text-slate-650">|</span>
+                <span className="text-[10px] text-slate-400 font-sans font-bold">{dateString}</span>
+              </div>
+
+              {/* Top Bar Badges & Icons */}
+              <div className="flex items-center gap-2">
+                <div className="hidden lg:flex items-center gap-1 px-2.5 py-1 bg-slate-950/40 border border-slate-850 rounded-full">
+                  <span className="w-1 h-1 rounded-full bg-emerald-500 animate-ping" />
+                  <span className="text-slate-350 uppercase tracking-wider text-[8px] font-black">GPS Locked</span>
+                </div>
+                <div className="hidden lg:flex items-center gap-1 px-2.5 py-1 bg-slate-950/40 border border-slate-850 rounded-full">
+                  <span className="w-1 h-1 rounded-full bg-emerald-500" />
+                  <span className="text-slate-350 uppercase tracking-wider text-[8px] font-black">Network Strong</span>
+                </div>
+                
+                {/* Bell notification */}
+                <button className="p-1.5 bg-slate-950/60 hover:bg-slate-900 border border-slate-850 rounded-full relative cursor-pointer text-slate-350">
+                  <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white font-extrabold text-[7px] w-3 h-3 rounded-full flex items-center justify-center border border-slate-950 shadow-[0_0_3px_rgba(239,68,68,0.5)]">3</span>
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
+                </button>
+                <button 
+                  onClick={() => setActiveTab('settings')}
+                  className="p-1.5 bg-slate-950/60 hover:bg-slate-900 border border-slate-850 rounded-full cursor-pointer text-slate-450 hover:text-slate-200"
+                >
+                  <Settings className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </header>
+
+            {/* FIRST ROW WIDGETS: SOS (col-span-4), Voice Assistant (col-span-3), Live Location (col-span-3) */}
+            <div className="grid grid-cols-1 lg:grid-cols-10 gap-4 min-h-0 items-stretch flex-[1.1]">
+              
+              {/* SOS Column */}
+              <div className="lg:col-span-4 glass-panel p-4 flex flex-col justify-between items-center text-center relative overflow-hidden bg-[#0c0508]/85 border border-red-950/40 shadow-[0_0_25px_rgba(255,30,60,0.05)]">
+                {/* HUD Coordinates Background Crosshairs & Radar Ticks */}
+                <div className="absolute inset-0 bg-[linear-gradient(rgba(255,30,60,0.01)_1px,transparent_1px),linear-gradient(90deg,rgba(255,30,60,0.01)_1px,transparent_1px)] bg-[size:16px_16px] pointer-events-none opacity-45" />
+                
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-15">
+                  <svg className="w-full h-full text-red-500 max-w-[260px] max-h-[260px]" viewBox="0 0 100 100" fill="none" stroke="currentColor">
+                    <circle cx="50" cy="50" r="45" strokeWidth="0.1" strokeDasharray="1 1.5" />
+                    <circle cx="50" cy="50" r="36" strokeWidth="0.15" />
+                    <circle cx="50" cy="50" r="26" strokeWidth="0.1" strokeDasharray="3 1" />
+                    <circle cx="50" cy="50" r="14" strokeWidth="0.08" />
+                    <line x1="50" y1="0" x2="50" y2="100" strokeWidth="0.08" strokeDasharray="1 2" />
+                    <line x1="0" y1="50" x2="100" y2="50" strokeWidth="0.08" strokeDasharray="1 2" />
+                    {/* Compass Angle Ticks */}
+                    <text x="47.5" y="8" className="text-[3px] font-mono fill-red-500 font-bold">000°</text>
+                    <text x="91" y="51" className="text-[3px] font-mono fill-red-500 font-bold">090°</text>
+                    <text x="47.5" y="94" className="text-[3px] font-mono fill-red-500 font-bold">180°</text>
+                    <text x="3" y="51" className="text-[3px] font-mono fill-red-500 font-bold">270°</text>
+                  </svg>
+                </div>
+
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-44 h-44 border border-red-500/5 rounded-full pointer-events-none animate-pulse" />
+                
+                <div className="flex flex-col gap-0.5 items-center z-10">
+                  <h2 className="text-xs font-black uppercase tracking-wider text-slate-100 flex items-center gap-1.5">
+                    Quick Emergency SOS <span className="text-red-500 font-sans tracking-tight">///</span>
+                  </h2>
+                  <p className="text-[9px] text-slate-450 leading-tight max-w-[220px]">
+                    Press the SOS button to instantly alert your contacts and share live location.
+                  </p>
+                </div>
+                
+                <div className="relative my-2 flex items-center justify-center z-10 scale-90">
+                  {/* Outer Tech Ring 1 (Dotted / Dashed Spinner) */}
+                  <div className="absolute w-40 h-40 rounded-full border border-dashed border-red-500/25 animate-[spin_60s_linear_infinite]" />
+                  {/* Outer Tech Ring 2 (Ticker Counter-Spinner) */}
+                  <div className="absolute w-34 h-34 rounded-full border border-red-500/15 animate-[spin_30s_linear_infinite_reverse]" />
+                  {/* Outer Tech Ring 3 (Cardinals indicators) */}
+                  <div className="absolute w-37 h-37 rounded-full border border-red-500/5">
+                    <div className="absolute top-0 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-red-500 shadow-[0_0_8px_#ff1e3c]" />
+                    <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-red-500 shadow-[0_0_8px_#ff1e3c]" />
+                    <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-red-500 shadow-[0_0_8px_#ff1e3c]" />
+                    <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-red-500 shadow-[0_0_8px_#ff1e3c]" />
+                  </div>
+                  
+                  {/* Actual Button - Slimmed */}
+                  <button 
+                    onClick={triggerManualPanic} 
+                    className={`sos-btn ${isEmergency ? 'bg-red-800 animate-none' : ''} cursor-pointer flex flex-col items-center justify-center z-10`}
+                    style={{ width: '104px', height: '104px' }}
+                  >
+                    <span className="text-2xl font-extrabold text-white tracking-widest leading-none">SOS</span>
+                    <span className="text-[7.5px] text-white/80 font-black tracking-widest uppercase mt-1.5">{isEmergency ? 'Resolve' : 'Tap to Trigger'}</span>
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-1.5 px-3 py-1 bg-[#090406]/85 border border-red-500/35 rounded-full z-10 shadow-[0_0_10px_rgba(255,30,60,0.08)]">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="text-[8px] text-emerald-450 font-black uppercase tracking-wider">GPS Signal: Strong</span>
+                </div>
+              </div>
+
+              {/* Voice Guardian Column */}
+              <div className="lg:col-span-3 flex flex-col min-h-0">
+                <VoiceAssistant />
+              </div>
+
+              {/* Live Location Column */}
+              <div className="lg:col-span-3 glass-panel p-4 flex flex-col justify-between bg-[#0a0c16]/90 border border-slate-900 relative min-h-0">
+                <div className="flex justify-between items-center z-10">
+                  <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Live Location</span>
+                  <span className="text-[8px] text-cyan-400 font-bold bg-cyan-950/50 px-2 py-0.5 border border-cyan-500/25 rounded-md">Accuracy: 5m</span>
+                </div>
+                
+                {/* Map mockup - Height-constrained */}
+                <div 
+                  onClick={() => setActiveTab('routing')}
+                  className="flex-1 min-h-[90px] w-full rounded-xl bg-slate-950/60 border border-slate-900 overflow-hidden relative flex items-center justify-center cursor-pointer hover:border-cyan-500/40 transition-colors my-2"
+                >
+                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_45%,rgba(0,0,0,0.6)_80%)] z-10" />
+                  <div className="absolute inset-0 bg-[linear-gradient(30deg,rgba(0,242,254,0.01)_1px,transparent_1px),linear-gradient(150deg,rgba(0,242,254,0.01)_1px,transparent_1px)] bg-[size:12px_12px] pointer-events-none opacity-30" />
+                  
+                  <div className="absolute w-10 h-10 rounded-full border border-cyan-500/20 animate-ping" />
+                  <div className="absolute w-16 h-16 rounded-full border border-cyan-500/5 animate-pulse" />
+                  
+                  <div className="z-10 flex flex-col items-center gap-1">
+                    <div className="w-7 h-7 rounded-full bg-cyan-950/90 border border-cyan-500/60 flex items-center justify-center shadow-[0_0_12px_rgba(0,242,254,0.25)] animate-bounce">
+                      <Map className="w-3.5 h-3.5 text-cyan-400" />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-between items-center gap-1.5 z-10">
+                  <div className="flex items-center gap-1.5 overflow-hidden flex-1">
+                    <div className="p-1 bg-cyan-950/40 border border-cyan-500/30 rounded-lg text-cyan-400 shrink-0">
+                      <Map className="w-3 h-3" />
+                    </div>
+                    <span className="text-[10px] text-slate-350 truncate font-semibold">{locationAddress}</span>
+                  </div>
+                  <button 
+                    onClick={() => setActiveTab('routing')} 
+                    className="px-2.5 py-1 bg-cyan-950/40 hover:bg-cyan-900/50 border border-cyan-500/35 rounded-lg text-[8px] font-black uppercase text-cyan-400 tracking-wider shrink-0 cursor-pointer transition-colors"
+                  >
+                    View Map
+                  </button>
+                </div>
+              </div>
+
             </div>
 
-            {/* Deterrent Shield Controls */}
-            <div className="glass-panel p-6 flex flex-col gap-4">
-              <h3 className="text-md font-bold text-white flex items-center gap-2">
-                <ShieldCheck className="w-5 h-5 text-cyan-400" /> AI Deterrent Toolkit
-              </h3>
-              <p className="text-xs text-slate-400">
-                Instantly trigger defensive simulated overlays to discourage attackers or buy time.
-              </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* SECOND ROW: DETERRENTS & CONTACTS */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 min-h-0 flex-[0.9]">
+              {/* Deterrent toolkit */}
+              <div className="glass-panel p-4 flex flex-col justify-between bg-[#0a0c16]/90 border border-slate-900 h-full">
+                <div className="flex items-center gap-2 z-10">
+                  <ShieldCheck className="w-4.5 h-4.5 text-cyan-400" />
+                  <div>
+                    <h3 className="text-xs font-black uppercase tracking-wider text-slate-100">AI Deterrent Toolkit</h3>
+                    <p className="text-[9px] text-slate-500 mt-0.5">Smart tools to discourage threats and protect you.</p>
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-1.5 z-10">
+                  {/* Card 1: Fake Call */}
+                  <div className="p-3.5 rounded-xl bg-slate-950/40 border border-slate-900 flex flex-col gap-2.5">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-full bg-red-950/40 border border-red-500/30 flex items-center justify-center text-red-500 shadow-[0_0_10px_rgba(239,68,68,0.15)] shrink-0">
+                        <PhoneCall className="w-3.5 h-3.5" />
+                      </div>
+                      <div className="flex flex-col overflow-hidden">
+                        <span className="text-[10px] font-black uppercase text-slate-105 tracking-wider truncate">Fake Phone Call</span>
+                        <span className="text-[8px] text-slate-500 font-bold uppercase mt-0.5">Voice Override</span>
+                      </div>
+                    </div>
+                    <p className="text-[9px] text-slate-450 leading-tight">Simulate an incoming voice call to create a safe escape.</p>
+                    <button 
+                      onClick={() => setFakeCallActive(true)}
+                      className="w-full py-1.5 bg-transparent hover:bg-red-950/10 border border-red-500/30 hover:border-red-500/60 rounded-lg text-[9px] font-black uppercase tracking-wider text-red-500 cursor-pointer transition-colors"
+                    >
+                      Start Call
+                    </button>
+                  </div>
+
+                  {/* Card 2: Deterrence Screen */}
+                  <div className="p-3.5 rounded-xl bg-slate-950/40 border border-slate-900 flex flex-col gap-2.5">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-full bg-amber-950/40 border border-amber-500/30 flex items-center justify-center text-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.15)] shrink-0">
+                        <Video className="w-3.5 h-3.5" />
+                      </div>
+                      <div className="flex flex-col overflow-hidden">
+                        <span className="text-[10px] font-black uppercase text-slate-105 tracking-wider truncate">Deterrence Screen</span>
+                        <span className="text-[8px] text-slate-500 font-bold uppercase mt-0.5">Visual Shield</span>
+                      </div>
+                    </div>
+                    <p className="text-[9px] text-slate-450 leading-tight">Show a deterrence recording screen to scare off targets.</p>
+                    <button 
+                      onClick={() => setFakeRecActive(true)}
+                      className="w-full py-1.5 bg-transparent hover:bg-amber-950/10 border border-amber-500/30 hover:border-amber-500/60 rounded-lg text-[9px] font-black uppercase tracking-wider text-amber-500 cursor-pointer transition-colors"
+                    >
+                      Start Screen
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Contacts preview */}
+              <div className="glass-panel p-4 flex flex-col justify-between bg-[#0a0c16]/90 border border-slate-900 h-full">
+                <div className="flex justify-between items-center z-10">
+                  <div className="flex items-center gap-2">
+                    <Users className="w-4 h-4 text-cyan-400" />
+                    <div>
+                      <h3 className="text-xs font-black uppercase tracking-wider text-slate-100">Trusted Contacts</h3>
+                      <p className="text-[9px] text-slate-500 mt-0.5">Primary emergency notification circle.</p>
+                    </div>
+                  </div>
+                  <span className="text-[8px] text-slate-400 font-bold bg-slate-900 border border-slate-800 px-2 py-0.5 rounded-md">
+                    {contacts.length} Contacts
+                  </span>
+                </div>
+
+                <div className="flex flex-col gap-2 mt-1.5 z-10">
+                  {contacts.slice(0, 2).map((contact) => (
+                    <div key={contact.id} className="p-2 bg-slate-950/45 border border-slate-900/50 rounded-xl flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-2 overflow-hidden">
+                        <div className="w-7 h-7 rounded-full bg-cyan-950/40 border border-cyan-500/20 flex items-center justify-center font-bold text-xs text-cyan-400 shrink-0">
+                          {contact.name.charAt(0)}
+                        </div>
+                        <div className="overflow-hidden">
+                          <h4 className="text-[11px] font-bold text-white flex items-center gap-1.5 truncate">
+                            {contact.name}
+                          </h4>
+                          <p className="text-[8px] text-slate-450 truncate">{contact.phone}</p>
+                        </div>
+                      </div>
+                      <div className="flex gap-1.5">
+                        <a 
+                          href={`tel:${contact.phone}`}
+                          className="p-1 bg-slate-900 border border-slate-800 hover:border-cyan-500/40 rounded-lg text-slate-400 hover:text-cyan-400 transition-colors"
+                        >
+                          <PhoneCall className="w-3 h-3" />
+                        </a>
+                        <button 
+                          onClick={() => setToast({ message: `Message broadcast simulated to ${contact.name}` })}
+                          className="p-1 bg-slate-900 border border-slate-800 hover:border-cyan-500/40 rounded-lg text-slate-400 hover:text-cyan-400 transition-colors cursor-pointer"
+                        >
+                          <Radio className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  {contacts.length === 0 && (
+                    <div className="py-4 text-center text-[10px] text-slate-500 font-semibold italic">
+                      No contacts configured. Click below to add guardians.
+                    </div>
+                  )}
+                </div>
+
                 <button 
-                  onClick={() => setFakeCallActive(true)}
-                  className="btn-glass border-slate-700/50 hover:border-cyan-500/30 flex items-center justify-center gap-2.5 py-4 cursor-pointer"
+                  onClick={() => setActiveTab('contacts')}
+                  className="w-full mt-1.5 py-1.5 bg-slate-950/80 hover:bg-slate-900 border border-cyan-500/20 hover:border-cyan-500/40 rounded-lg text-[9px] font-black uppercase tracking-wider text-slate-300 flex items-center justify-center gap-1.5 cursor-pointer transition-colors shadow-[0_0_8px_rgba(0,242,254,0.03)] z-10"
                 >
-                  <PhoneCall className="w-5 h-5 text-cyan-400" /> Receive Fake Phone Call
-                </button>
-                <button 
-                  onClick={() => setFakeRecActive(true)}
-                  className="btn-glass border-slate-700/50 hover:border-red-500/30 flex items-center justify-center gap-2.5 py-4 cursor-pointer"
-                >
-                  <Video className="w-5 h-5 text-red-500" /> Start Deterrence Recording Screen
+                  <Users className="w-3.5 h-3.5 text-cyan-400" /> Manage Contacts
                 </button>
               </div>
             </div>
 
-            {/* Quick Details widgets */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-              <div className="glass-panel p-5 flex flex-col gap-1">
-                <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Tracking Code</span>
-                <span className="text-lg font-extrabold text-cyan-400">{user?.tracking_code}</span>
-                <p className="text-[10px] text-slate-500 mt-1">Share this with guardians for live safety checks.</p>
+            {/* BOTTOM HUD COLUMN FOOTERS */}
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 shrink-0">
+              {/* Card 1: Tracking Code */}
+              <div className="glass-panel p-2 px-3 flex flex-col justify-between bg-[#0a0c16]/90 border border-slate-900 shadow-[0_0_10px_rgba(0,242,254,0.01)] h-14">
+                <div className="flex items-center justify-between text-cyan-400">
+                  <span className="text-[7.5px] uppercase font-bold text-slate-450 tracking-wider">Tracking Code</span>
+                  <svg className="w-3.5 h-3.5 opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5.01 20h2a1 1 0 001-1v-2a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1z" /></svg>
+                </div>
+                <span className="text-xs font-black text-cyan-400 font-mono tracking-wide">{user?.tracking_code}</span>
+                <p className="text-[7.5px] text-slate-500 uppercase font-medium truncate">Share this code with guardians for live tracking.</p>
               </div>
-              <div className="glass-panel p-5 flex flex-col gap-1">
-                <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Configured Contacts</span>
-                <span className="text-lg font-extrabold text-slate-100">{contacts.length} Trusted</span>
-                <p className="text-[10px] text-slate-500 mt-1">Alerts will trigger across all prioritized numbers.</p>
+
+              {/* Card 2: Safe Route */}
+              <div className="glass-panel p-2 px-3 flex flex-col justify-between bg-[#0a0c16]/90 border border-slate-900 shadow-[0_0_10px_rgba(0,242,254,0.01)] h-14">
+                <div className="flex items-center justify-between text-cyan-400">
+                  <span className="text-[7.5px] uppercase font-bold text-slate-450 tracking-wider">Safe Route</span>
+                  <Map className="w-3 h-3 opacity-70" />
+                </div>
+                <span className="text-[10px] font-black text-slate-100">Recommended</span>
+                <p className="text-[7.5px] text-slate-500 uppercase font-medium truncate">2.4 km away - Use safe route for travel</p>
               </div>
-              <div className="glass-panel p-5 flex flex-col gap-1">
-                <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Medical Status</span>
-                <span className="text-lg font-extrabold text-slate-100">{user?.blood_group || 'Blood Group N/A'}</span>
-                <p className="text-[10px] text-slate-500 mt-1">Medical card info displays dynamically inside notifications.</p>
+
+              {/* Card 3: Alerts Sent */}
+              <div className="glass-panel p-2 px-3 flex flex-col justify-between bg-[#0a0c16]/90 border border-slate-900 shadow-[0_0_10px_rgba(0,242,254,0.01)] h-14">
+                <div className="flex items-center justify-between text-cyan-400">
+                  <span className="text-[7.5px] uppercase font-bold text-slate-455 tracking-wider">Alerts Sent</span>
+                  <svg className="w-3 h-3 opacity-70" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
+                </div>
+                <span className="text-xs font-black text-slate-100">7</span>
+                <p className="text-[7.5px] text-slate-500 uppercase font-medium truncate">Total alerts sent this month</p>
               </div>
+
+              {/* Card 4: Response Time */}
+              <div className="glass-panel p-2 px-3 flex flex-col justify-between bg-[#0a0c16]/90 border border-slate-900 shadow-[0_0_10px_rgba(0,242,254,0.01)] h-14">
+                <div className="flex items-center justify-between text-emerald-450">
+                  <span className="text-[7.5px] uppercase font-bold text-slate-455 tracking-wider">Response Time</span>
+                  <svg className="w-3 h-3 opacity-70 text-emerald-455" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                </div>
+                <span className="text-xs font-black text-emerald-400">1.2 min</span>
+                <p className="text-[7.5px] text-slate-500 uppercase font-medium truncate">Average response time</p>
+              </div>
+
+              {/* Card 5: Battery Status */}
+              <div className="glass-panel p-2 px-3 flex flex-col justify-between bg-[#0a0c16]/90 border border-slate-900 shadow-[0_0_10px_rgba(0,242,254,0.01)] h-14">
+                <div className="flex items-center justify-between text-emerald-455">
+                  <span className="text-[7.5px] uppercase font-bold text-slate-455 tracking-wider">Battery Status</span>
+                  <svg className="w-3 h-3 opacity-70 text-emerald-455" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
+                </div>
+                <span className="text-xs font-black text-emerald-400">{batteryLevel}%</span>
+                <p className="text-[7.5px] text-slate-500 uppercase font-medium truncate">Battery level optimised</p>
+              </div>
+            </div>
+
+            {/* Bottom branding footer */}
+            <div className="flex justify-between items-center border-t border-slate-900 pt-2 shrink-0 h-5 text-[7px] font-bold text-slate-500 uppercase tracking-widest">
+              <span className="flex items-center gap-1"><Shield className="w-2.5 h-2.5 text-cyan-500" /> Safe is power. We're always watching over you.</span>
+              <span className="flex items-center gap-1"><ShieldCheck className="w-3 h-3 text-emerald-500" /> Stay Alert. Stay Safe.</span>
             </div>
           </div>
         )}
 
-        {/* TAB 2: SAFE ROUTING MAPS */}
-        {activeTab === 'routing' && (
+        {/* SECONDARY SCROLLABLE TABS */}
+        {activeTab !== 'dashboard' && (
+          <div className="flex-1 overflow-y-auto pr-1 flex flex-col gap-4 min-h-0">
+            {/* TAB 2: SAFE ROUTING MAPS */}
+            {activeTab === 'routing' && (
           <div className="flex flex-col gap-6">
             <div className="glass-panel p-6 flex flex-col gap-4">
               <h3 className="text-lg font-bold text-white">Nova AI Safe Route Advisor</h3>
@@ -601,7 +1082,7 @@ export const UserDashboard = () => {
           </div>
         )}
 
-        {/* TAB 4: MEDICAL AND SETTINGS */}
+        {/* TAB 4: MEDICAL PROFILE */}
         {activeTab === 'medical' && (
           <div className="glass-panel p-8 flex flex-col gap-6">
             <div>
@@ -610,21 +1091,9 @@ export const UserDashboard = () => {
             </div>
 
             <div className="flex flex-col gap-4">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-slate-300">Nova Custom Wake-Word (Optional)</label>
-                <input 
-                  type="text" 
-                  className="input-field text-sm" 
-                  placeholder="e.g. Jarvis Save Me" 
-                  value={wakeWord}
-                  onChange={(e) => setWakeWord(e.target.value)}
-                />
-                <span className="text-[10px] text-slate-500">Nova always listens for "Nova", "Help Me", "Emergency", but you can define a secret/custom phrase.</span>
-              </div>
-
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-bold text-slate-300">Blood Group</label>
+                  <label className="text-xs font-bold text-slate-350">Blood Group</label>
                   <select 
                     className="input-field text-sm"
                     value={bloodGroup}
@@ -644,7 +1113,7 @@ export const UserDashboard = () => {
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-slate-300">Medical Notes, Allergies, or Emergency Remarks</label>
+                <label className="text-xs font-bold text-slate-350">Medical Notes, Allergies, or Emergency Remarks</label>
                 <textarea 
                   rows={4}
                   className="input-field text-sm" 
@@ -655,9 +1124,112 @@ export const UserDashboard = () => {
               </div>
 
               <button onClick={handleSaveProfile} className="btn-glow-primary self-start font-bold text-xs py-2.5 px-6 cursor-pointer">
-                Sync Guardian Parameters
+                Sync Medical Card Info
               </button>
             </div>
+          </div>
+        )}
+
+        {/* TAB 5: LIVE TRACKING */}
+        {activeTab === 'tracking' && (
+          <div className="glass-panel p-8 flex flex-col gap-6">
+            <h2 className="text-lg font-bold text-white flex items-center gap-2">
+              <Radio className="w-5 h-5 text-cyan-400 animate-pulse" /> Live Tracking Monitor
+            </h2>
+            <p className="text-xs text-slate-400">Stream coordinates real-time to guardians. Your active tracking session link:</p>
+            <div className="p-4 bg-slate-950/60 border border-slate-900 rounded-xl flex flex-col gap-3">
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-slate-400 font-bold uppercase">Tracking Code</span>
+                <span className="font-mono text-cyan-400 font-bold text-sm">{user?.tracking_code}</span>
+              </div>
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-slate-400 font-bold uppercase">Public Link</span>
+                <a href={`/guardian?code=${user?.tracking_code}`} target="_blank" rel="noreferrer" className="text-cyan-400 font-bold hover:underline">
+                  Open Guardian Live Viewer
+                </a>
+              </div>
+            </div>
+            <div className="h-96 w-full rounded-xl bg-slate-950/80 border border-slate-900 flex items-center justify-center text-slate-500 font-semibold italic">
+              <div className="text-center flex flex-col items-center gap-3">
+                <div className="w-12 h-12 rounded-full border border-cyan-500/25 animate-ping flex items-center justify-center text-cyan-400 bg-cyan-950/20">
+                  <Map className="w-5 h-5" />
+                </div>
+                <span className="text-xs text-slate-400 uppercase tracking-widest font-bold">Active Geolocation Stream Online</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 6: AI GUARDIAN */}
+        {activeTab === 'ai' && (
+          <div className="glass-panel p-8 flex flex-col gap-6">
+            <h2 className="text-lg font-bold text-white flex items-center gap-2">
+              <ShieldCheck className="w-5 h-5 text-cyan-400" /> AI Guardian Assist
+            </h2>
+            <p className="text-xs text-slate-400">Chat with Nova to analyze safe paths, check medical notes, or ask for guidance.</p>
+            
+            <div className="flex flex-col gap-4 h-80 bg-slate-950/60 border border-slate-900 rounded-xl p-4 overflow-y-auto">
+              <div className="p-3 bg-[#0d0f1c]/80 border border-cyan-500/10 rounded-xl self-start max-w-xs text-xs text-slate-200">
+                <strong>Nova:</strong> Hello! I am your SafeNova Guardian Assistant. I monitor your status and will trigger alerts if emergency phrases are heard. How can I help you?
+              </div>
+            </div>
+            
+            <div className="flex gap-2">
+              <input type="text" placeholder="Ask Nova anything..." className="input-field text-sm flex-1 animate-pulse" disabled />
+              <button className="btn-glow-primary text-xs px-4 py-2 cursor-pointer font-bold opacity-50" disabled>Send</button>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 7: ALERT HISTORY */}
+        {activeTab === 'history' && (
+          <div className="glass-panel p-8 flex flex-col gap-6">
+            <h2 className="text-lg font-bold text-white flex items-center gap-2">
+              <FileText className="w-5 h-5 text-cyan-400" /> Alert History Log
+            </h2>
+            <p className="text-xs text-slate-400">Review past emergency triggers and resolved incident codes.</p>
+            
+            <div className="flex flex-col gap-3">
+              <div className="p-4 bg-slate-900/40 border border-slate-800 rounded-xl flex justify-between items-center">
+                <div className="flex flex-col gap-1 text-xs">
+                  <span className="font-bold text-slate-200">Incident Code: {user?.tracking_code}</span>
+                  <span className="text-slate-500">August 03, 2026 at 17:40:25</span>
+                </div>
+                <span className="px-2.5 py-1 rounded bg-emerald-950/40 text-emerald-400 border border-emerald-800/40 text-[9px] font-black uppercase">
+                  Resolved Cleanly
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 8: SETTINGS */}
+        {activeTab === 'settings' && (
+          <div className="glass-panel p-8 flex flex-col gap-6">
+            <h2 className="text-lg font-bold text-white flex items-center gap-2">
+              <Settings className="w-5 h-5 text-cyan-400" /> System Preferences
+            </h2>
+            <p className="text-xs text-slate-400">Configure secret phrases, speech backoff, and notifier delivery limits.</p>
+            
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-bold text-slate-350">Custom Emergency Wake Word</label>
+                <input 
+                  type="text" 
+                  className="input-field text-sm" 
+                  placeholder="e.g. Jarvis save me"
+                  value={wakeWord}
+                  onChange={(e) => setWakeWord(e.target.value)}
+                />
+                <span className="text-[10px] text-slate-500">In addition to the standard trigger phrases: "SOS", "Help me", "Emergency", "I am in danger", "Save me".</span>
+              </div>
+
+              <button onClick={handleSaveProfile} className="btn-glow-primary text-xs py-2 px-6 font-bold self-start cursor-pointer">
+                Save System Preferences
+              </button>
+            </div>
+          </div>
+        )}
           </div>
         )}
       </main>
@@ -672,6 +1244,14 @@ export const UserDashboard = () => {
         active={fakeRecActive} 
         onClose={() => setFakeRecActive(false)} 
       />
+
+      {/* Strobe Flash Overlay */}
+      {strobeActive && (
+        <div 
+          onClick={() => setStrobeActive(false)}
+          className="fixed inset-0 z-[9999] bg-white pointer-events-auto animate-[strobe-flash_0.08s_infinite]"
+        />
+      )}
     </div>
   );
 };

@@ -7,8 +7,14 @@ export const EmergencyProvider = ({ children }) => {
   const { user, token, API_URL } = useAuth();
   const [isEmergency, setIsEmergency] = useState(false);
   const [activeSession, setActiveSession] = useState(null);
-  const [speechStatus, setSpeechStatus] = useState('offline'); // offline, listening, matched, error
+  const [speechStatus, setSpeechStatus] = useState('offline'); // offline, listening, matched, error, permission_denied, unsupported
   const [wakePhraseMatch, setWakePhraseMatch] = useState('');
+  const [liveTranscript, setLiveTranscript] = useState('');
+  const [lastWakePhrase, setLastWakePhrase] = useState('');
+  const [recognitionConfidence, setRecognitionConfidence] = useState(1.0);
+  const [micPermissionGranted, setMicPermissionGranted] = useState(null);
+  const [micPermissionError, setMicPermissionError] = useState(null);
+  const [voiceGuardianEnabled, setVoiceGuardianEnabled] = useState(true);
   
   const locationIntervalRef = useRef(null);
   const recognitionRef = useRef(null);
@@ -16,10 +22,10 @@ export const EmergencyProvider = ({ children }) => {
   const audioChunksRef = useRef([]);
   const lastTriggerTimeRef = useRef(0);
 
-  // Initialize Speech Recognition for Wake Word
+  // Automatically request mic permission and start recognition
   useEffect(() => {
-    if (user) {
-      startSpeechRecognition();
+    if (user && voiceGuardianEnabled) {
+      requestMicPermissionAndStart();
     } else {
       stopSpeechRecognition();
     }
@@ -28,7 +34,7 @@ export const EmergencyProvider = ({ children }) => {
       stopSpeechRecognition();
       if (locationIntervalRef.current) clearInterval(locationIntervalRef.current);
     };
-  }, [user]);
+  }, [user, voiceGuardianEnabled]);
 
   // Continuously post location during an emergency
   useEffect(() => {
@@ -52,11 +58,114 @@ export const EmergencyProvider = ({ children }) => {
     }
   }, [isEmergency, activeSession]);
 
+  const normalizeText = (text) => {
+    return text
+      .toLowerCase()
+      .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?]/g, "") // remove punctuation
+      .replace(/\s+/g, " ") // normalize spacing
+      .trim();
+  };
+
+  const checkFuzzyMatch = (transcript, customWakeWord = '') => {
+    const normalized = normalizeText(transcript);
+    const targets = [
+      'nova help me', 'hey nova', 'help', 'help me', 
+      'emergency', 'sos', 'save me', 'i am in danger'
+    ];
+    if (customWakeWord) {
+      targets.push(normalizeText(customWakeWord));
+    }
+
+    // 1. Direct match check
+    for (const target of targets) {
+      if (normalized.includes(target)) {
+        return target;
+      }
+    }
+
+    // 2. Homophones / common phonetic misrecognitions
+    const commonMisrecognitions = [
+      { target: 'nova help me', pattern: /no[ah|ra|wa]\s+help\s+me/i },
+      { target: 'hey nova', pattern: /hey\s+no[ah|ra|wa]/i },
+      { target: 'emergency', pattern: /emergen/i },
+      { target: 'sos', pattern: /s\s*o\s*s/i },
+      { target: 'i am in danger', pattern: /danger/i },
+      { target: 'save me', pattern: /safe\s+me/i }
+    ];
+
+    for (const { target, pattern } of commonMisrecognitions) {
+      if (pattern.test(normalized)) {
+        return target;
+      }
+    }
+
+    return null;
+  };
+
+  const playConfirmationChirp = () => {
+    try {
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      const ctx = new AudioContext();
+      
+      // Hi-tech alert tone 1
+      const osc1 = ctx.createOscillator();
+      const gain1 = ctx.createGain();
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
+      osc1.frequency.exponentialRampToValueAtTime(987.77, ctx.currentTime + 0.12); // B5
+      gain1.gain.setValueAtTime(0.12, ctx.currentTime);
+      gain1.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.12);
+      osc1.connect(gain1);
+      gain1.connect(ctx.destination);
+      osc1.start();
+      osc1.stop(ctx.currentTime + 0.12);
+
+      // Alert tone 2 (delayed slightly)
+      setTimeout(() => {
+        const osc2 = ctx.createOscillator();
+        const gain2 = ctx.createGain();
+        osc2.type = 'sine';
+        osc2.frequency.setValueAtTime(783.99, ctx.currentTime); // G5
+        osc2.frequency.exponentialRampToValueAtTime(1174.66, ctx.currentTime + 0.18); // D6
+        gain2.gain.setValueAtTime(0.12, ctx.currentTime);
+        gain2.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.18);
+        osc2.connect(gain2);
+        gain2.connect(ctx.destination);
+        osc2.start();
+        osc2.stop(ctx.currentTime + 0.18);
+      }, 70);
+    } catch (e) {
+      console.warn('Unable to play audio synth tone:', e);
+    }
+  };
+
+  const requestMicPermissionAndStart = async () => {
+    try {
+      console.log('Requesting microphone permissions...');
+      await navigator.mediaDevices.getUserMedia({ audio: true });
+      setMicPermissionGranted(true);
+      setMicPermissionError(null);
+      startSpeechRecognition();
+    } catch (err) {
+      console.error('Microphone permission request failed:', err);
+      setMicPermissionGranted(false);
+      setMicPermissionError('Microphone permission denied. Please allow microphone access in your browser settings to enable the Voice Guardian.');
+      setSpeechStatus('permission_denied');
+    }
+  };
+
   const startSpeechRecognition = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
+      console.warn('SpeechRecognition API is not supported in this browser.');
       setSpeechStatus('unsupported');
       return;
+    }
+
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch (e) {}
     }
 
     try {
@@ -65,71 +174,89 @@ export const EmergencyProvider = ({ children }) => {
       recognition.interimResults = true;
       recognition.lang = 'en-US';
 
-      let isPermissionDenied = false;
-      let hasError = false;
-
       recognition.onstart = () => {
+        console.log('[Voice Guardian]: Speech recognition engine is online & listening.');
         setSpeechStatus('listening');
-        hasError = false;
       };
 
       recognition.onerror = (event) => {
-        console.error('Speech recognition error', event.error);
-        if (event.error === 'not-allowed') {
-          isPermissionDenied = true;
-          setSpeechStatus('permission_denied');
-        } else {
-          hasError = true;
-          setSpeechStatus('error');
+        console.error(`[Voice Guardian Error]: ${event.error}`);
+        switch (event.error) {
+          case 'not-allowed':
+            setMicPermissionGranted(false);
+            setMicPermissionError('Microphone access blocked. Please re-allow permission in browser address bar.');
+            setSpeechStatus('permission_denied');
+            break;
+          case 'no-speech':
+            // No speech detected, ignore
+            break;
+          case 'network':
+            console.warn('Network socket dropped during speech streams. Auto-retrying.');
+            setSpeechStatus('error');
+            break;
+          case 'audio-capture':
+            console.warn('Microphone hardware capture error. Auto-retrying.');
+            setSpeechStatus('error');
+            break;
+          case 'aborted':
+            console.log('Speech recognition stream aborted.');
+            break;
+          default:
+            setSpeechStatus('error');
         }
       };
 
       recognition.onend = () => {
-        // Continuous listening: restart if user is logged in, not in emergency, not blocked by permission, and not intentionally stopped
-        if (user && !isEmergency && !isPermissionDenied && recognitionRef.current === recognition) {
-          if (hasError) {
-            // Wait 5 seconds before retrying to prevent hot looping on network/mic errors
-            setTimeout(() => {
-              if (user && !isEmergency && !isPermissionDenied && recognitionRef.current === recognition) {
-                try {
-                  recognition.start();
-                } catch (e) {}
-              }
-            }, 5000);
-          } else {
-            try {
-              recognition.start();
-            } catch (e) {
-              // Already started
+        console.log('[Voice Guardian]: Recognition stream ended.');
+        // Auto recover and restart if voice guardian is still active
+        if (user && voiceGuardianEnabled && !isEmergency && recognitionRef.current === recognition) {
+          console.log('[Voice Guardian]: Auto-recovering stream now...');
+          setTimeout(() => {
+            if (user && voiceGuardianEnabled && !isEmergency && recognitionRef.current === recognition) {
+              try {
+                recognition.start();
+              } catch (e) {}
             }
-          }
+          }, 1000);
         }
       };
 
       recognition.onresult = (event) => {
-        const customWakeWord = user?.custom_wake_word?.toLowerCase() || '';
-        const standardWakePhrases = [
-          'nova help me', 'i am in danger', 'help me', 'save me', 'emergency', 'help', 'sos',
-          'hey nova', 'hi nova', 'hey nowa', 'hey noah', 'hey nora', 'nova'
-        ];
+        const customWakeWord = user?.custom_wake_word || '';
+        let interimTranscript = '';
+        let finalTranscript = '';
 
         for (let i = event.resultIndex; i < event.results.length; ++i) {
-          const result = event.results[i][0];
-          const transcript = result.transcript.toLowerCase();
-          const confidence = result.confidence;
+          const result = event.results[i];
+          const text = result[0].transcript;
+          const confidence = result[0].confidence;
+          
+          setRecognitionConfidence(confidence);
 
-          // Check for confidence score to ensure reliable voice triggering
-          if (confidence < 0.3) continue;
+          if (result.isFinal) {
+            finalTranscript += text;
+          } else {
+            interimTranscript += text;
+          }
+        }
 
-          // Check standard phrases
-          const matchedPhrase = standardWakePhrases.find(phrase => transcript.includes(phrase)) 
-            || (customWakeWord && transcript.includes(customWakeWord) ? customWakeWord : null);
+        const currentText = (finalTranscript || interimTranscript).trim();
+        if (currentText) {
+          setLiveTranscript(currentText);
+          console.log(`[Recognized Transcript]: "${currentText}" (confidence: ${(event.results[event.results.length - 1][0].confidence * 100).toFixed(1)}%)`);
 
-          if (matchedPhrase) {
-            setWakePhraseMatch(matchedPhrase);
+          const matched = checkFuzzyMatch(currentText, customWakeWord);
+          if (matched) {
+            console.log(`[WAKE WAKE DETECTED]: "${matched}" matched with confidence! Triggering SOS.`);
+            setWakePhraseMatch(matched);
+            setLastWakePhrase(matched);
             setSpeechStatus('matched');
-            triggerEmergency('voice_activation', matchedPhrase);
-            break;
+            
+            // Play hi-tech confirmation chirp sound
+            playConfirmationChirp();
+            
+            // Trigger emergency workflow
+            triggerEmergency('voice_activation', matched);
           }
         }
       };
@@ -138,6 +265,7 @@ export const EmergencyProvider = ({ children }) => {
       recognition.start();
     } catch (e) {
       console.error('Speech initialization error', e);
+      setSpeechStatus('error');
     }
   };
 
@@ -368,6 +496,14 @@ export const EmergencyProvider = ({ children }) => {
       activeSession,
       speechStatus,
       wakePhraseMatch,
+      liveTranscript,
+      lastWakePhrase,
+      recognitionConfidence,
+      micPermissionGranted,
+      micPermissionError,
+      voiceGuardianEnabled,
+      setVoiceGuardianEnabled,
+      requestMicPermissionAndStart,
       triggerEmergency,
       resolveEmergency,
       startSpeechRecognition,
