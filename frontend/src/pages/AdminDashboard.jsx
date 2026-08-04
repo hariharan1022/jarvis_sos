@@ -14,7 +14,7 @@ export const AdminDashboard = () => {
     resolvedCount: 18,
     systemLoad: '0.04 ms'
   });
-  
+
   const mapContainerRef = useRef(null);
   const mapInstanceRef = useRef(null);
   const layersRef = useRef([]);
@@ -23,7 +23,7 @@ export const AdminDashboard = () => {
   useEffect(() => {
     fetchActiveCases();
     fetchSystemLogs();
-    
+
     // Auto-update statistics
     const timer = setInterval(() => {
       fetchActiveCases();
@@ -45,7 +45,7 @@ export const AdminDashboard = () => {
   }, []);
 
   const connectAdminWebSocket = () => {
-    const ws = new WebSocket('ws://localhost:8000/api/ws/admin');
+    const ws = new WebSocket('ws://127.0.0.1:8000/api/ws/admin');
     wsRef.current = ws;
 
     ws.onmessage = (event) => {
@@ -69,7 +69,7 @@ export const AdminDashboard = () => {
           ...prev,
           activeCount: data.length
         }));
-        
+
         // Redraw map points
         setTimeout(() => updateMapMarkers(data), 100);
       }
@@ -100,7 +100,7 @@ export const AdminDashboard = () => {
       // Find session to resolve
       const session = activeCases.find(c => c.user_id === userId);
       if (!session) return;
-      
+
       const res = await fetch(`${API_URL}/emergency/resolve`, {
         method: 'POST',
         headers: {
@@ -126,9 +126,9 @@ export const AdminDashboard = () => {
       L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
         attribution: '&copy; OpenStreetMap &copy; CARTO'
       }).addTo(map);
-      
+
       mapInstanceRef.current = map;
-      
+
       // Load Heatmap overlays (crime zones)
       loadCrimeZones(map);
     }
@@ -174,7 +174,7 @@ export const AdminDashboard = () => {
         const m = L.marker([c.last_lat, c.last_lng], { icon: markerIcon })
           .addTo(map)
           .bindPopup(`Active SOS: User ID ${c.user_id} (${c.emergency_type})`);
-        
+
         layersRef.current.push(m);
       }
     });
@@ -256,7 +256,7 @@ export const AdminDashboard = () => {
                     </div>
                     <p className="text-[10px] text-slate-300 leading-snug truncate">Last Loc: {c.last_address}</p>
                     <div className="flex gap-2 mt-1">
-                      <button 
+                      <button
                         onClick={() => handleResolve(c.user_id)}
                         className="w-full py-1.5 bg-red-800 hover:bg-red-700 active:bg-red-900 text-white font-bold rounded text-[10px] cursor-pointer"
                       >
@@ -276,7 +276,7 @@ export const AdminDashboard = () => {
             <MessageSquare className="w-4 h-4 text-cyan-400" /> Outbound Dispatch Alerts
           </h3>
           <p className="text-xs text-slate-400">Chronological feed of mock SMS, WhatsApp, Email messages dispatched to user trusted contacts.</p>
-          
+
           <div className="flex flex-col gap-3 max-h-60 overflow-y-auto">
             {logs.length === 0 ? (
               <p className="text-xs text-slate-500">No outbound notifications logged.</p>

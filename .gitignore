@@ -29,3 +29,10 @@ dist/
 .vscode/
 .idea/
 .DS_Store
+
+# Virtual Environments
+.venv/
+venv/
+env/
+ENV/
+backend/.venv/

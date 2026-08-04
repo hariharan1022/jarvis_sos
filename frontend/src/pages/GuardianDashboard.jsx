@@ -33,23 +33,23 @@ export const GuardianDashboard = () => {
     setActiveSession(null);
     setTimeline([]);
     setCoordinates([]);
-    
+
     if (wsRef.current) {
       wsRef.current.close();
     }
 
     try {
-      const res = await fetch(`http://localhost:8000/api/emergency/track/${targetCode}`);
+      const res = await fetch(`http://127.0.0.1:8000/api/emergency/track/${targetCode}`);
       if (!res.ok) {
         throw new Error('No active emergency session found for this code.');
       }
       const data = await res.json();
       setActiveSession(data);
-      
+
       // Seed coordinates
       const seeds = data.location_logs.map(log => ({ lat: log.latitude, lng: log.longitude }));
       setCoordinates(seeds);
-      
+
       // Build initial timeline items
       const initialTimeline = [
         { type: 'info', text: 'Emergency Triggered', time: data.start_time }
@@ -58,20 +58,20 @@ export const GuardianDashboard = () => {
         initialTimeline.push({
           type: 'evidence',
           evidence_type: ev.type,
-          url: `http://localhost:8000${ev.filepath}`,
+          url: `http://127.0.0.1:8000${ev.filepath}`,
           time: ev.timestamp
         });
       });
-      setTimeline(initialTimeline.sort((a,b) => new Date(a.time) - new Date(b.time)));
+      setTimeline(initialTimeline.sort((a, b) => new Date(a.time) - new Date(b.time)));
 
       // Initialize map with starting position
       if (seeds.length > 0) {
         setTimeout(() => initMap(seeds[seeds.length - 1], seeds), 100);
       }
-      
+
       // Connect WebSocket for real-time logs
       connectWebSocket(targetCode);
-      
+
     } catch (e) {
       setError(e.message || 'Tracking connection failed.');
     }
@@ -79,7 +79,7 @@ export const GuardianDashboard = () => {
 
   const initMap = (center, path) => {
     if (!mapContainerRef.current) return;
-    
+
     if (mapInstanceRef.current) {
       mapInstanceRef.current.remove();
     }
@@ -96,15 +96,15 @@ export const GuardianDashboard = () => {
     });
 
     markerRef.current = L.marker([center.lat, center.lng], { icon: customIcon }).addTo(map);
-    
+
     const polylineCoords = path.map(c => [c.lat, c.lng]);
     polylineRef.current = L.polyline(polylineCoords, { color: '#ff0844', weight: 4 }).addTo(map);
-    
+
     mapInstanceRef.current = map;
   };
 
   const connectWebSocket = (targetCode) => {
-    const ws = new WebSocket(`ws://localhost:8000/api/ws/track/${targetCode}`);
+    const ws = new WebSocket(`ws://127.0.0.1:8000/api/ws/track/${targetCode}`);
     wsRef.current = ws;
 
     ws.onopen = () => {
@@ -119,7 +119,7 @@ export const GuardianDashboard = () => {
       const message = JSON.parse(event.data);
       if (message.type === 'location_update') {
         const newLoc = { lat: message.latitude, lng: message.longitude };
-        
+
         // Update state
         setCoordinates(prev => {
           const updated = [...prev, newLoc];
@@ -138,10 +138,10 @@ export const GuardianDashboard = () => {
 
         // Add to timeline
         setTimeline(prev => [
-          ...prev, 
+          ...prev,
           { type: 'info', text: `Location Updated (Speed: ${message.speed} km/h)`, time: message.timestamp }
         ]);
-        
+
         // Update battery level in active session representation
         setActiveSession(prev => ({
           ...prev,
@@ -157,7 +157,7 @@ export const GuardianDashboard = () => {
           {
             type: 'evidence',
             evidence_type: message.evidence_type,
-            url: `http://localhost:8000${message.filepath}`,
+            url: `http://127.0.0.1:8000${message.filepath}`,
             time: message.timestamp
           }
         ]);
@@ -196,14 +196,14 @@ export const GuardianDashboard = () => {
 
         {/* Enter Code form */}
         <div className="flex gap-2 w-full md:w-auto">
-          <input 
-            type="text" 
+          <input
+            type="text"
             placeholder="Enter Emergency Code"
             className="input-field text-sm w-full md:w-48 text-center tracking-widest font-mono font-bold"
             value={code}
             onChange={(e) => setCode(e.target.value.toUpperCase())}
           />
-          <button 
+          <button
             onClick={() => handleTrack()}
             className="btn-glow-primary text-xs font-bold whitespace-nowrap cursor-pointer"
           >
@@ -257,7 +257,7 @@ export const GuardianDashboard = () => {
                 <Activity className="w-6 h-6 text-cyan-400" />
               </div>
             </div>
-            
+
             {/* User Details */}
             {activeSession.user && (
               <div className="glass-panel p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -300,7 +300,7 @@ export const GuardianDashboard = () => {
                 <div key={idx} className="flex flex-col gap-2 relative">
                   {/* Timeline point */}
                   <div className="absolute -left-[21px] top-1.5 w-2.5 h-2.5 rounded-full bg-cyan-400 border border-slate-950" />
-                  
+
                   <div className="flex justify-between items-baseline text-[10px] text-slate-500">
                     <span className="font-bold uppercase text-slate-400">
                       {item.type === 'evidence' ? `Uploaded ${item.evidence_type}` : 'System Log'}
@@ -311,10 +311,10 @@ export const GuardianDashboard = () => {
                   {item.type === 'evidence' ? (
                     <div className="bg-slate-950/60 border border-slate-800 rounded-lg p-3">
                       {item.evidence_type.startsWith('image') ? (
-                        <img 
-                          src={item.url} 
-                          alt="Evidence Capture" 
-                          className="w-full h-auto rounded border border-slate-800 mt-1 max-h-36 object-cover" 
+                        <img
+                          src={item.url}
+                          alt="Evidence Capture"
+                          className="w-full h-auto rounded border border-slate-800 mt-1 max-h-36 object-cover"
                           onError={(e) => {
                             e.target.style.display = 'none'; // hide if file not yet uploaded / mock file
                           }}

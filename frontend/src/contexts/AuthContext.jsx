@@ -7,7 +7,7 @@ export const AuthProvider = ({ children }) => {
   const [token, setToken] = useState(localStorage.getItem('safenova_token') || null);
   const [loading, setLoading] = useState(true);
 
-  const API_URL = 'http://localhost:8000/api';
+  const API_URL = 'http://127.0.0.1:8000/api';
 
   useEffect(() => {
     if (token) {
