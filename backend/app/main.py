@@ -1,7 +1,10 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 import os
+import time
+from collections import defaultdict
 
 from .config import settings
 from .database import engine, Base, get_db, SessionLocal
@@ -14,10 +17,34 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
-    description="Backend emergency engine for SafeNova AI"
+    description="Backend emergency engine for SafeNova AI",
+    version="1.0.0"
 )
 
-# CORS middleware configuration
+# ─── In-process sliding-window rate limiter (no Redis dependency) ─────────────
+_rate_buckets: dict = defaultdict(list)
+
+def _is_rate_limited(key: str, max_calls: int, window_seconds: int) -> bool:
+    now = time.time()
+    _rate_buckets[key] = [t for t in _rate_buckets[key] if now - t < window_seconds]
+    if len(_rate_buckets[key]) >= max_calls:
+        return True
+    _rate_buckets[key].append(now)
+    return False
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    # Limit SOS trigger: 5 requests per minute per IP
+    if request.url.path == "/api/emergency/trigger" and request.method == "POST":
+        client_ip = request.client.host if request.client else "unknown"
+        if _is_rate_limited(f"sos:{client_ip}", max_calls=5, window_seconds=60):
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Too many emergency triggers. Please wait before retrying."}
+            )
+    return await call_next(request)
+
+# ─── CORS ─────────────────────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.ALLOWED_ORIGINS,
@@ -54,6 +81,14 @@ def startup_event():
     finally:
         db.close()
 
+    # Security check: warn if using default secret key
+    if settings.SECRET_KEY == "super-secret-nova-guardian-key-128-bits":
+        print("=" * 70)
+        print("⚠️  [SECURITY] SECRET_KEY is still the default placeholder!")
+        print("   Generate a real key:  python -c \"import secrets; print(secrets.token_hex(32))\"")
+        print("   Then set it in:  backend/.env  →  SECRET_KEY=<your_new_key>")
+        print("=" * 70)
+
 @app.get("/")
 def read_root():
     return {
@@ -62,15 +97,18 @@ def read_root():
         "mode": "Jarvis Safety Guard"
     }
 
-# WebSockets logic for real-time location stream
+@app.get("/health")
+def health_check():
+    """Lightweight health probe for uptime monitoring and container orchestration."""
+    return {"status": "healthy", "service": settings.PROJECT_NAME, "version": "1.0.0"}
+
+# ─── WebSockets ────────────────────────────────────────────────────────────────
 @app.websocket("/api/ws/track/{tracking_code}")
 async def websocket_track(websocket: WebSocket, tracking_code: str):
     await manager.connect_session(tracking_code, websocket)
     try:
         while True:
-            # Maintain active connection; discard incoming client messages or handle heartbeat
             data = await websocket.receive_text()
-            # Echo heartbeat to ensure link stays active
             await websocket.send_json({"type": "ping"})
     except WebSocketDisconnect:
         manager.disconnect_session(tracking_code, websocket)

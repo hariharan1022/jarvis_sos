@@ -3,7 +3,11 @@ uvicorn[standard]
 sqlalchemy
 passlib[bcrypt]
 pyjwt
-pydantic
+pydantic[email]
 python-multipart
 websockets
 psycopg2-binary
+python-dotenv
+aiosmtplib
+httpx
+slowapi
