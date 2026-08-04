@@ -19,6 +19,9 @@ export const EmergencyProvider = ({ children }) => {
   // ─── SOS Workflow State ────────────────────────────────────────────────────
   const [sosState, setSosState] = useState({
     locationAcquired: false,
+    backendTriggered: false,
+    errorMsg: null,
+    gpsError: null,
     smsSent: null,
     emailSent: null,
     whatsappSent: null,
@@ -516,6 +519,9 @@ export const EmergencyProvider = ({ children }) => {
     // Reset SOS Tracking State
     setSosState({
       locationAcquired: false,
+      backendTriggered: false,
+      errorMsg: null,
+      gpsError: null,
       smsSent: null,
       emailSent: null,
       whatsappSent: null,
@@ -531,12 +537,14 @@ export const EmergencyProvider = ({ children }) => {
     navigator.geolocation.getCurrentPosition(
       async ({ coords: { latitude, longitude } }) => {
         console.log(`[Emergency] GPS acquired: ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`);
-        setSosState(prev => ({ ...prev, locationAcquired: true }));
+        setSosState(prev => ({ ...prev, locationAcquired: true, gpsError: null }));
         await _sendTriggerRequest(latitude, longitude, batteryLevel, type, wakeWord);
       },
       (err) => {
-        console.warn('[Emergency] GPS unavailable, using fallback coords:', err.message);
-        speakFeedback("I couldn't get your exact location. Retrying with approximate coordinates.");
+        const errorText = err.code === 1 ? "Location permission denied" : "Unable to obtain GPS";
+        console.warn(`[Emergency] GPS unavailable (${errorText}), using fallback coords:`, err.message);
+        setSosState(prev => ({ ...prev, locationAcquired: false, gpsError: errorText }));
+        speakFeedback(`I couldn't get your exact location. Retrying with approximate coordinates.`);
         _sendTriggerRequest(12.9716, 77.5946, batteryLevel, type, wakeWord);
       },
       { enableHighAccuracy: true, timeout: 8000 }
@@ -566,15 +574,18 @@ export const EmergencyProvider = ({ children }) => {
         console.log('[Emergency] ✅ Backend acknowledged SOS. Session:', session.tracking_code);
         setActiveSession(session);
         setIsEmergency(true);
+        setSosState(prev => ({ ...prev, backendTriggered: true }));
       } else {
         addDebugLog(`❌ Backend SOS Error: ${res.status}`);
         console.error('[Emergency] Backend returned error:', res.status);
         setIsEmergency(true); // offline fallback
+        setSosState(prev => ({ ...prev, backendTriggered: false, errorMsg: `API Error: ${res.status}` }));
       }
     } catch (err) {
       addDebugLog(`❌ Backend SOS Fetch Failed: ${err.message}`);
       console.error('[Emergency] Fetch failed:', err.message);
       setIsEmergency(true); // offline fallback
+      setSosState(prev => ({ ...prev, backendTriggered: false, errorMsg: `Network Error: ${err.message}` }));
     }
   };
 
