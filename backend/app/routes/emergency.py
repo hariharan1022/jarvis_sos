@@ -313,3 +313,60 @@ def get_mock_emails():
             "last_modified": os.path.getmtime(f)
         })
     return emails
+
+@router.get("/health/email")
+async def email_health_check():
+    """Tests SMTP connectivity and returns detailed diagnostics. No auth required for diagnostics."""
+    import smtplib
+    import asyncio
+    from ..config import settings
+
+    host = settings.SMTP_HOST
+    configured_port = settings.SMTP_PORT
+    user = settings.SMTP_USER
+    smtp_from = settings.SMTP_FROM
+
+    result = {
+        "smtp_host": host,
+        "smtp_port": configured_port,
+        "smtp_user": user,
+        "smtp_from": smtp_from,
+        "has_password": bool(settings.SMTP_PASSWORD),
+        "credentials_present": all([host, user, settings.SMTP_PASSWORD, smtp_from]),
+        "port_tests": {},
+        "working_port": None,
+        "status": "unchecked"
+    }
+
+    ports_to_test = list(dict.fromkeys([configured_port, 587, 465, 25]))
+
+    for port in ports_to_test:
+        def test_port(p=port):
+            try:
+                if p == 465:
+                    s = smtplib.SMTP_SSL(host, p, timeout=8)
+                else:
+                    s = smtplib.SMTP(host, p, timeout=8)
+                s.ehlo()
+                caps = list(s.esmtp_features.keys()) if hasattr(s, 'esmtp_features') else []
+                s.quit()
+                return {"status": "open", "capabilities": caps}
+            except Exception as e:
+                return {"status": "blocked", "error": str(e)}
+
+        port_result = await asyncio.to_thread(test_port)
+        result["port_tests"][str(port)] = port_result
+        if port_result["status"] == "open" and result["working_port"] is None:
+            result["working_port"] = port
+
+    if result["working_port"] and result["credentials_present"]:
+        result["status"] = "healthy"
+        result["message"] = f"SMTP reachable on port {result['working_port']}. Ready to send emails."
+    elif result["working_port"] and not result["credentials_present"]:
+        result["status"] = "missing_credentials"
+        result["message"] = "SMTP server reachable but credentials are not set in .env"
+    else:
+        result["status"] = "unreachable"
+        result["message"] = "All SMTP ports are blocked on this network."
+
+    return result

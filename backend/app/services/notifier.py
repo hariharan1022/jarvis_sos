@@ -31,18 +31,7 @@ def log_notification(channel: str, recipient: str, message: str, priority: int =
     if len(notification_logs) > 200:
         notification_logs.pop(0)
 
-def normalize_phone(phone: str) -> str:
-    if not phone:
-        return ""
-    # Retain only digits and '+'
-    cleaned = "".join(c for c in phone if c.isdigit() or c == "+")
-    if not cleaned.startswith("+"):
-        from ..config import settings
-        default_code = settings.DEFAULT_COUNTRY_CODE or "+1"
-        if not default_code.startswith("+"):
-            default_code = "+" + default_code
-        cleaned = f"{default_code}{cleaned}"
-    return cleaned
+
 
 def validate_email_address(email: str) -> bool:
     if not email:
@@ -135,96 +124,6 @@ def ensure_worker_started():
             pass
 
 class NotifierService:
-    @staticmethod
-    async def send_sms(phone: str, message: str, priority: int = 1):
-        normalized_phone = normalize_phone(phone)
-        logger.info(f"[SMS ALERT] [Priority {priority}] To: {normalized_phone} - Message: {message}")
-        log_notification("SMS", normalized_phone, message, priority)
-
-        from ..config import settings
-        is_configured = all([
-            settings.TWILIO_ACCOUNT_SID,
-            settings.TWILIO_AUTH_TOKEN,
-            settings.TWILIO_PHONE_NUMBER
-        ]) and "your-twilio" not in settings.TWILIO_ACCOUNT_SID and settings.TWILIO_ACCOUNT_SID != ""
-
-        if not is_configured:
-            logger.error("Twilio credentials not configured. SMS failing explicitly.")
-            raise ValueError("Twilio API credentials not configured in environment.")
-
-        try:
-            url = f"https://api.twilio.com/2010-04-01/Accounts/{settings.TWILIO_ACCOUNT_SID}/Messages.json"
-            data = urllib.parse.urlencode({
-                "To": normalized_phone,
-                "From": settings.TWILIO_PHONE_NUMBER,
-                "Body": message
-            }).encode("utf-8")
-            
-            req = urllib.request.Request(url, data=data, method="POST")
-            auth_str = f"{settings.TWILIO_ACCOUNT_SID}:{settings.TWILIO_AUTH_TOKEN}"
-            auth_b64 = base64.b64encode(auth_str.encode("utf-8")).decode("utf-8")
-            req.add_header("Authorization", f"Basic {auth_b64}")
-            req.add_header("Content-Type", "application/x-www-form-urlencoded")
-            
-            def do_sms_request():
-                with urllib.request.urlopen(req, timeout=10) as response:
-                    return response.read().decode("utf-8")
-                    
-            res_body = await asyncio.to_thread(do_sms_request)
-            res_json = json.loads(res_body)
-            logger.info(f"SMS successfully sent to {normalized_phone}. SID: {res_json.get('sid')}")
-        except Exception as e:
-            logger.error(f"Error executing SMS delivery to {normalized_phone}: {e}")
-            raise
-
-    @staticmethod
-    async def send_whatsapp(phone: str, message: str, priority: int = 1):
-        normalized_phone = normalize_phone(phone)
-        to_whatsapp = f"whatsapp:{normalized_phone}"
-        
-        from ..config import settings
-        from_whatsapp = settings.TWILIO_WHATSAPP_NUMBER
-        if from_whatsapp and not from_whatsapp.startswith("whatsapp:"):
-            from_whatsapp = f"whatsapp:{from_whatsapp}"
-
-        logger.info(f"[WHATSAPP ALERT] [Priority {priority}] To: {normalized_phone} - Message: {message}")
-        log_notification("WhatsApp", normalized_phone, message, priority)
-
-        is_configured = all([
-            settings.TWILIO_ACCOUNT_SID,
-            settings.TWILIO_AUTH_TOKEN,
-            settings.TWILIO_WHATSAPP_NUMBER
-        ]) and "your-twilio" not in settings.TWILIO_ACCOUNT_SID and settings.TWILIO_ACCOUNT_SID != ""
-
-        if not is_configured:
-            logger.error("Twilio WhatsApp credentials not configured. Failing explicitly.")
-            raise ValueError("Twilio WhatsApp API credentials not configured.")
-
-        try:
-            url = f"https://api.twilio.com/2010-04-01/Accounts/{settings.TWILIO_ACCOUNT_SID}/Messages.json"
-            data = urllib.parse.urlencode({
-                "To": to_whatsapp,
-                "From": from_whatsapp,
-                "Body": message
-            }).encode("utf-8")
-            
-            req = urllib.request.Request(url, data=data, method="POST")
-            auth_str = f"{settings.TWILIO_ACCOUNT_SID}:{settings.TWILIO_AUTH_TOKEN}"
-            auth_b64 = base64.b64encode(auth_str.encode("utf-8")).decode("utf-8")
-            req.add_header("Authorization", f"Basic {auth_b64}")
-            req.add_header("Content-Type", "application/x-www-form-urlencoded")
-            
-            def do_wa_request():
-                with urllib.request.urlopen(req, timeout=10) as response:
-                    return response.read().decode("utf-8")
-                    
-            res_body = await asyncio.to_thread(do_wa_request)
-            res_json = json.loads(res_body)
-            logger.info(f"WhatsApp successfully sent to {normalized_phone}. SID: {res_json.get('sid')}")
-        except Exception as e:
-            logger.error(f"Error executing WhatsApp delivery to {normalized_phone}: {e}")
-            raise
-
     @staticmethod
     async def send_email(email: str, subject: str, plain_message: str, html_message: str, priority: int = 1, tracking_code: str = ''):
         """Enqueues an email to the background worker queue after validating the recipient."""
@@ -393,26 +292,40 @@ class NotifierService:
             msg.attach(part2)
 
             def do_smtp():
-                server = smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT)
-                server.ehlo()
-                server.starttls()
-                server.ehlo()
-                server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-                server.send_message(msg)
-                server.quit()
+                # Try the configured port first; fall back to port 25 if blocked by ISP
+                ports_to_try = [settings.SMTP_PORT]
+                if settings.SMTP_PORT not in (25,):
+                    ports_to_try.append(25)
                 
+                last_err = None
+                for port in ports_to_try:
+                    try:
+                        logger.info(f"[SMTP] Trying {settings.SMTP_HOST}:{port}")
+                        if port == 465:
+                            server = smtplib.SMTP_SSL(settings.SMTP_HOST, port, timeout=15)
+                        else:
+                            server = smtplib.SMTP(settings.SMTP_HOST, port, timeout=15)
+                        server.ehlo()
+                        if port != 465:
+                            server.starttls()
+                            server.ehlo()
+                        server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+                        server.send_message(msg)
+                        server.quit()
+                        logger.info(f"[SMTP] Successfully delivered to {email} via port {port}")
+                        return  # success
+                    except (ConnectionRefusedError, TimeoutError, OSError) as conn_err:
+                        logger.warning(f"[SMTP] Port {port} failed: {conn_err}. Trying next port...")
+                        last_err = conn_err
+                        continue
+                raise last_err  # re-raise if all ports exhausted
+
             await asyncio.to_thread(do_smtp)
             logger.info(f"SMTP email successfully delivered to {email}")
             return True, ""
         except Exception as e:
             logger.error(f"SMTP error dispatching email to {email}: {e}")
             return False, f"SMTP Error: {str(e)}"
-
-    @staticmethod
-    async def send_voice_call(phone: str, text: str, priority: int = 1):
-        normalized_phone = normalize_phone(phone)
-        logger.info(f"[VOICE CALL ALERT] [Priority {priority}] Calling {normalized_phone} - TTS Script: {text}")
-        log_notification("Voice Call", normalized_phone, text, priority)
 
     @classmethod
     async def trigger_emergency_notifications(cls, user_name: str, contacts: list, session_details: dict):
@@ -423,14 +336,6 @@ class NotifierService:
         
         # Deduplication check: limit alerts to once every 3 minutes per recipient/session
         now = datetime.utcnow()
-        
-        sms_body = (
-            f"ALERT: {user_name} is in danger! Emergency Type: {session_details.get('type')}. "
-            f"Location: {session_details.get('address')}. "
-            f"Battery: {session_details.get('battery')}%. "
-            f"Live track: {tracking_link} "
-            f"Maps: {maps_link}"
-        )
         
         # Refactored warm personal templates (plain text + html alternative formats)
         email_subject = f"Emergency Alert from {user_name} - Please Check Immediately"
@@ -533,35 +438,6 @@ class NotifierService:
             # Record sent timestamp for deduplication
             sent_cache[dedup_key] = now
 
-            if contact.notify_sms:
-                async def _send_sms_task(c=contact):
-                    try:
-                        await cls.send_sms(c.phone, sms_body, c.priority)
-                        await manager.broadcast_to_session(tracking_code, {
-                            "type": "notification_status", "channel": "sms", "status": "success", "recipient": c.phone
-                        })
-                    except Exception as e:
-                        logger.error(f"Failed to send SMS to {c.phone}: {e}")
-                        await manager.broadcast_to_session(tracking_code, {
-                            "type": "notification_status", "channel": "sms", "status": "failed", "recipient": c.phone, "error": str(e)
-                        })
-                tasks.append(asyncio.create_task(_send_sms_task()))
-
-            if contact.notify_whatsapp:
-                async def _send_wa_task(c=contact):
-                    whatsapp_phone = c.whatsapp if c.whatsapp else c.phone
-                    try:
-                        await cls.send_whatsapp(whatsapp_phone, sms_body, c.priority)
-                        await manager.broadcast_to_session(tracking_code, {
-                            "type": "notification_status", "channel": "whatsapp", "status": "success", "recipient": whatsapp_phone
-                        })
-                    except Exception as e:
-                        logger.error(f"Failed to send WhatsApp to {whatsapp_phone}: {e}")
-                        await manager.broadcast_to_session(tracking_code, {
-                            "type": "notification_status", "channel": "whatsapp", "status": "failed", "recipient": whatsapp_phone, "error": str(e)
-                        })
-                tasks.append(asyncio.create_task(_send_wa_task()))
-
             if contact.notify_email:
                 async def _send_email_task(c=contact):
                     try:
@@ -572,14 +448,6 @@ class NotifierService:
                             "type": "notification_status", "channel": "email", "status": "failed", "recipient": c.email, "error": str(e)
                         })
                 tasks.append(asyncio.create_task(_send_email_task()))
-
-            if contact.notify_call:
-                async def _send_call_task(c=contact):
-                    try:
-                        await cls.send_voice_call(c.phone, f"Emergency alert. Your contact {user_name} is in danger. We have sent you a text with their live location.", c.priority)
-                    except Exception as e:
-                        logger.error(f"Failed to make voice call to {c.phone}: {e}")
-                tasks.append(asyncio.create_task(_send_call_task()))
                 
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)

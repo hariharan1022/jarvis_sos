@@ -30,11 +30,7 @@ class Contact(Base):
     name = Column(String, nullable=False)
     phone = Column(String, nullable=False)
     email = Column(String, nullable=False)
-    whatsapp = Column(String, nullable=True)
-    notify_sms = Column(Boolean, default=True)
-    notify_whatsapp = Column(Boolean, default=False)
     notify_email = Column(Boolean, default=True)
-    notify_call = Column(Boolean, default=False)
     priority = Column(Integer, default=1) # 1 = high, 2 = medium, etc.
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     

@@ -22,14 +22,8 @@ export const EmergencyProvider = ({ children }) => {
     backendTriggered: false,
     errorMsg: null,
     gpsError: null,
-    smsSent: null,
     emailSent: null,
-    whatsappSent: null,
-    callSent: null,
-    smsError: null,
-    smsError: null,
-    emailError: null,
-    whatsappError: null
+    emailError: null
   });
 
   const [sosTimers, setSosTimers] = useState({
@@ -37,10 +31,7 @@ export const EmergencyProvider = ({ children }) => {
     gpsEnd: null,
     apiStart: null,
     apiEnd: null,
-    smsEnd: null,
-    emailEnd: null,
-    whatsappEnd: null,
-    callEnd: null
+    emailEnd: null
   });
 
   const [currentAddress, setCurrentAddress] = useState('Unknown Location');
@@ -164,22 +155,18 @@ export const EmergencyProvider = ({ children }) => {
               }
               
               // Check if all requested channels have successfully sent
-              const allSuccess = ['smsSent', 'emailSent', 'whatsappSent', 'callSent'].every(
-                key => next[key] === null || next[key] === true
-              );
+              const allSuccess = next.emailSent === null || next.emailSent === true;
               
-              const hasTrue = ['smsSent', 'emailSent', 'whatsappSent', 'callSent'].some(key => next[key] === true);
-              const hasPending = ['smsSent', 'emailSent', 'whatsappSent', 'callSent'].some(key => next[key] === 'retrying' || next[key] === false);
+              const hasTrue = next.emailSent === true;
+              const hasPending = next.emailSent === 'retrying' || next.emailSent === false;
               
               if (hasTrue && !hasPending && allSuccess) {
-                const prevAllSuccess = ['smsSent', 'emailSent', 'whatsappSent', 'callSent'].every(
-                  key => prev[key] === null || prev[key] === true
-                );
-                const prevHasTrue = ['smsSent', 'emailSent', 'whatsappSent', 'callSent'].some(key => prev[key] === true);
-                const prevHasPending = ['smsSent', 'emailSent', 'whatsappSent', 'callSent'].some(key => prev[key] === 'retrying' || prev[key] === false);
+                const prevAllSuccess = prev.emailSent === null || prev.emailSent === true;
+                const prevHasTrue = prev.emailSent === true;
+                const prevHasPending = prev.emailSent === 'retrying' || prev.emailSent === false;
 
                 if (!(prevHasTrue && !prevHasPending && prevAllSuccess)) {
-                  speakFeedback("Emergency alert has been sent successfully. Your live location is being shared. Your trusted contacts have been notified. Stay calm. Help is on the way.");
+                  speakFeedback("Emergency alert has been sent successfully. Your trusted contacts have been notified by email. Your live location is now being shared. Stay calm, help is on the way.");
                 }
               }
               
@@ -537,10 +524,8 @@ export const EmergencyProvider = ({ children }) => {
       backendTriggered: false,
       errorMsg: null,
       gpsError: null,
-      smsSent: null,
       emailSent: null,
-      whatsappSent: null,
-      callSent: null
+      emailError: null
     });
 
     setSosTimers({
@@ -548,10 +533,7 @@ export const EmergencyProvider = ({ children }) => {
       gpsEnd: null,
       apiStart: null,
       apiEnd: null,
-      smsEnd: null,
-      emailEnd: null,
-      whatsappEnd: null,
-      callEnd: null
+      emailEnd: null
     });
 
     let batteryLevel = 100;

@@ -53,11 +53,7 @@ def create_contact(
         name=contact_in.name,
         phone=contact_in.phone,
         email=contact_in.email,
-        whatsapp=contact_in.whatsapp,
-        notify_sms=contact_in.notify_sms,
-        notify_whatsapp=contact_in.notify_whatsapp,
         notify_email=contact_in.notify_email,
-        notify_call=contact_in.notify_call,
         priority=contact_in.priority
     )
     db.add(new_contact)
@@ -79,11 +75,7 @@ def update_contact(
     contact.name = contact_in.name
     contact.phone = contact_in.phone
     contact.email = contact_in.email
-    contact.whatsapp = contact_in.whatsapp
-    contact.notify_sms = contact_in.notify_sms
-    contact.notify_whatsapp = contact_in.notify_whatsapp
     contact.notify_email = contact_in.notify_email
-    contact.notify_call = contact_in.notify_call
     contact.priority = contact_in.priority
     
     db.commit()

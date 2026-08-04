@@ -37,12 +37,7 @@ class Settings:
     SMTP_REPLY_TO: str = os.getenv("SMTP_REPLY_TO", "")
     SMTP_RETURN_PATH: str = os.getenv("SMTP_RETURN_PATH", "")
 
-    # Twilio Settings (for SMS & WhatsApp alerts)
-    TWILIO_ACCOUNT_SID: str = os.getenv("TWILIO_ACCOUNT_SID", "")
-    TWILIO_AUTH_TOKEN: str = os.getenv("TWILIO_AUTH_TOKEN", "")
-    TWILIO_PHONE_NUMBER: str = os.getenv("TWILIO_PHONE_NUMBER", "")
-    TWILIO_WHATSAPP_NUMBER: str = os.getenv("TWILIO_WHATSAPP_NUMBER", "")
-    DEFAULT_COUNTRY_CODE: str = os.getenv("DEFAULT_COUNTRY_CODE", "+1")
+
 
 settings = Settings()
 

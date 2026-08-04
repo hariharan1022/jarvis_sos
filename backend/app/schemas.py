@@ -43,11 +43,7 @@ class ContactBase(BaseModel):
     name: str
     phone: str
     email: EmailStr
-    whatsapp: Optional[str] = None
-    notify_sms: bool = True
-    notify_whatsapp: bool = False
     notify_email: bool = True
-    notify_call: bool = False
     priority: int = 1
 
 class ContactCreate(ContactBase):

@@ -169,8 +169,7 @@ export const UserDashboard = () => {
   // Contacts state
   const [contacts, setContacts] = useState([]);
   const [newContact, setNewContact] = useState({
-    name: '', phone: '', email: '', whatsapp: '',
-    notify_sms: true, notify_whatsapp: false, notify_email: true, notify_call: false, priority: 1
+    name: '', phone: '', email: '', notify_email: true, priority: 1
   });
 
   // Profile settings state
@@ -235,8 +234,7 @@ export const UserDashboard = () => {
       if (res.ok) {
         fetchContacts();
         setNewContact({
-          name: '', phone: '', email: '', whatsapp: '',
-          notify_sms: true, notify_whatsapp: false, notify_email: true, notify_call: false, priority: 1
+          name: '', phone: '', email: '', notify_email: true, priority: 1
         });
       }
     } catch (e) {
@@ -379,11 +377,9 @@ export const UserDashboard = () => {
 
   useEffect(() => {
     if (isEmergency && sosState && !sosSuccessShown) {
-      const allSuccess = ['emailSent', 'smsSent', 'whatsappSent', 'callSent'].every(
-        key => sosState[key] === null || sosState[key] === true
-      );
-      const hasTrue = ['emailSent', 'smsSent', 'whatsappSent', 'callSent'].some(key => sosState[key] === true);
-      const hasPending = ['emailSent', 'smsSent', 'whatsappSent', 'callSent'].some(key => sosState[key] === 'retrying' || sosState[key] === false);
+      const allSuccess = sosState.emailSent === null || sosState.emailSent === true;
+      const hasTrue = sosState.emailSent === true;
+      const hasPending = sosState.emailSent === 'retrying' || sosState.emailSent === false;
 
       if (hasTrue && !hasPending && allSuccess) {
         setSosSuccessShown(true);
@@ -741,37 +737,6 @@ export const UserDashboard = () => {
                         <span className="text-[10px] text-cyan-500 font-mono">{getElapsed(sosTimers?.emailEnd)}</span>
                       </div>
 
-                      <div className="flex items-center gap-3 text-sm font-medium">
-                        {sosState?.smsSent === true ? (
-                          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                        ) : sosState?.smsSent === false ? (
-                          <AlertCircle className="w-4 h-4 text-red-500" />
-                        ) : sosState?.smsSent === 'retrying' ? (
-                          <Loader2 className="w-4 h-4 text-amber-500 animate-spin" />
-                        ) : (
-                          <Loader2 className="w-4 h-4 text-cyan-500 animate-spin" />
-                        )}
-                        <span className={`flex-1 ${sosState?.smsSent === true ? "text-emerald-100" : sosState?.smsSent === false ? "text-red-400" : "text-slate-300"}`}>
-                          {sosState?.smsSent === false ? 'SMS Service Failed' : 'SMS Sent'}
-                        </span>
-                        <span className="text-[10px] text-cyan-500 font-mono">{getElapsed(sosTimers?.smsEnd)}</span>
-                      </div>
-                      
-                      <div className="flex items-center gap-3 text-sm font-medium">
-                        {sosState?.whatsappSent === true ? (
-                          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                        ) : sosState?.whatsappSent === false ? (
-                          <AlertCircle className="w-4 h-4 text-red-500" />
-                        ) : sosState?.whatsappSent === 'retrying' ? (
-                          <Loader2 className="w-4 h-4 text-amber-500 animate-spin" />
-                        ) : (
-                          <Loader2 className="w-4 h-4 text-cyan-500 animate-spin" />
-                        )}
-                        <span className={`flex-1 ${sosState?.whatsappSent === true ? "text-emerald-100" : sosState?.whatsappSent === false ? "text-red-400" : "text-slate-300"}`}>
-                          {sosState?.whatsappSent === false ? 'WhatsApp Failed' : 'WhatsApp Sent'}
-                        </span>
-                        <span className="text-[10px] text-cyan-500 font-mono">{getElapsed(sosTimers?.whatsappEnd)}</span>
-                      </div>
                       
                       <div className="flex items-center gap-3 text-sm font-medium border-t border-red-500/20 pt-2 mt-1">
                         <CheckCircle2 className="w-4 h-4 text-emerald-400" />
@@ -1225,20 +1190,8 @@ export const UserDashboard = () => {
 
                   <div className="md:col-span-3 flex flex-wrap gap-6 mt-2 text-xs font-semibold text-slate-300">
                     <label className="flex items-center gap-2">
-                      <input type="checkbox" checked={newContact.notify_sms} onChange={(e) => setNewContact(c => ({ ...c, notify_sms: e.target.checked }))} />
-                      Send SMS
-                    </label>
-                    <label className="flex items-center gap-2">
-                      <input type="checkbox" checked={newContact.notify_whatsapp} onChange={(e) => setNewContact(c => ({ ...c, notify_whatsapp: e.target.checked }))} />
-                      Send WhatsApp
-                    </label>
-                    <label className="flex items-center gap-2">
                       <input type="checkbox" checked={newContact.notify_email} onChange={(e) => setNewContact(c => ({ ...c, notify_email: e.target.checked }))} />
                       Send Email
-                    </label>
-                    <label className="flex items-center gap-2">
-                      <input type="checkbox" checked={newContact.notify_call} onChange={(e) => setNewContact(c => ({ ...c, notify_call: e.target.checked }))} />
-                      Voice Call Alert
                     </label>
                   </div>
 
@@ -1262,10 +1215,7 @@ export const UserDashboard = () => {
                               <span>Email: {c.email}</span>
                             </div>
                             <div className="flex gap-2 mt-1">
-                              {c.notify_sms && <span className="text-[9px] bg-cyan-950/40 text-cyan-400 px-2 py-0.5 rounded border border-cyan-800/40">SMS</span>}
-                              {c.notify_whatsapp && <span className="text-[9px] bg-emerald-950/40 text-emerald-400 px-2 py-0.5 rounded border border-emerald-800/40">WhatsApp</span>}
                               {c.notify_email && <span className="text-[9px] bg-blue-950/40 text-blue-400 px-2 py-0.5 rounded border border-blue-800/40">Email</span>}
-                              {c.notify_call && <span className="text-[9px] bg-purple-950/40 text-purple-400 px-2 py-0.5 rounded border border-purple-800/40">Voice Call</span>}
                             </div>
                           </div>
                           <button onClick={() => handleDeleteContact(c.id)} className="p-2 text-rose-400 hover:bg-rose-950/30 rounded cursor-pointer">
