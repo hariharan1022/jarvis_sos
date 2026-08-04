@@ -4,9 +4,9 @@ import { useEmergency } from '../contexts/EmergencyContext';
 import { VoiceAssistant } from '../components/VoiceAssistant';
 import { FakeCall } from '../components/FakeCall';
 import { FakeRecording } from '../components/FakeRecording';
-import { 
-  Shield, User, Phone, Users, FileText, Settings, LogOut, 
-  MapPin, Heart, AlertTriangle, PhoneCall, Radio, Video, Plus, Trash2, ShieldCheck, Map
+import {
+  Shield, User, Phone, Users, FileText, Settings, LogOut,
+  MapPin, Heart, AlertTriangle, PhoneCall, Radio, Video, Plus, Trash2, ShieldCheck, Map, Mail
 } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -14,10 +14,34 @@ import 'leaflet/dist/leaflet.css';
 export const UserDashboard = () => {
   const { user, token, logout, updateProfile, API_URL } = useAuth();
   const { isEmergency, activeSession, triggerEmergency, resolveEmergency, speechStatus } = useEmergency();
-  
-  // Dashboard navigation tabs: dashboard, contacts, medical, routing, settings
+
+  // Dashboard navigation tabs: dashboard, contacts, medical, routing, settings, inbox
   const [activeTab, setActiveTab] = useState('dashboard');
   const [toast, setToast] = useState(null);
+
+  const [mockEmails, setMockEmails] = useState([]);
+  const [selectedEmail, setSelectedEmail] = useState(null);
+
+  const fetchMockEmails = async () => {
+    try {
+      const res = await fetch(`${API_URL}/emergency/mock-emails`);
+      if (res.ok) {
+        const data = await res.json();
+        setMockEmails(data);
+        if (data.length > 0 && !selectedEmail) {
+          setSelectedEmail(data[0]);
+        }
+      }
+    } catch (err) {
+      console.error("Error fetching mock emails:", err);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'inbox') {
+      fetchMockEmails();
+    }
+  }, [activeTab]);
 
   // Cinematic HUD interactive controls
   const [sirenActive, setSirenActive] = useState(false);
@@ -32,7 +56,7 @@ export const UserDashboard = () => {
       if (sirenOscRef.current) {
         try {
           sirenOscRef.current.stop();
-        } catch (e) {}
+        } catch (e) { }
         sirenOscRef.current = null;
       }
       setSirenActive(false);
@@ -42,19 +66,19 @@ export const UserDashboard = () => {
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         const ctx = new AudioContext();
         sirenCtxRef.current = ctx;
-        
+
         const osc = ctx.createOscillator();
         const gainNode = ctx.createGain();
-        
+
         osc.type = 'sine';
         osc.frequency.setValueAtTime(800, ctx.currentTime);
         gainNode.gain.setValueAtTime(0.5, ctx.currentTime);
-        
+
         osc.connect(gainNode);
         gainNode.connect(ctx.destination);
-        
+
         osc.start();
-        
+
         // Siren sweep modulation
         const sweep = () => {
           if (!osc) return;
@@ -70,7 +94,7 @@ export const UserDashboard = () => {
           }
           sweep();
         }, 900);
-        
+
         sirenOscRef.current = osc;
         setSirenActive(true);
         setToast({ message: 'Loud Emergency Siren activated!' });
@@ -122,32 +146,32 @@ export const UserDashboard = () => {
       try {
         const bat = await navigator.getBattery();
         setBatteryLevel(Math.round(bat.level * 100));
-      } catch (e) {}
+      } catch (e) { }
     };
     updateBattery();
-    
+
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setLocationAddress(`Lat ${pos.coords.latitude.toFixed(4)}, Lng ${pos.coords.longitude.toFixed(4)}`);
       },
-      (err) => {},
+      (err) => { },
       { enableHighAccuracy: true }
     );
   }, []);
-  
-  
+
+
   // Contacts state
   const [contacts, setContacts] = useState([]);
   const [newContact, setNewContact] = useState({
     name: '', phone: '', email: '', whatsapp: '',
     notify_sms: true, notify_whatsapp: false, notify_email: true, notify_call: false, priority: 1
   });
-  
+
   // Profile settings state
   const [wakeWord, setWakeWord] = useState(user?.custom_wake_word || '');
   const [bloodGroup, setBloodGroup] = useState(user?.blood_group || '');
   const [medicalNotes, setMedicalNotes] = useState(user?.medical_notes || '');
-  
+
   // Route planning state
   const [startPoint, setStartPoint] = useState({ lat: 12.9716, lng: 77.5946 }); // Default Bangalore
   const [endPoint, setEndPoint] = useState({ lat: 12.9850, lng: 77.6050 });
@@ -251,7 +275,7 @@ export const UserDashboard = () => {
           attribution: '&copy; OpenStreetMap &copy; CARTO'
         }).addTo(mapInstanceRef.current);
       }
-      
+
       // Calculate safety score and safe routes
       fetchSafeRoute();
       fetchSafetyScore();
@@ -337,7 +361,7 @@ export const UserDashboard = () => {
     const startMarker = L.circleMarker([startPoint.lat, startPoint.lng], {
       color: '#00f2fe', fillOpacity: 1, radius: 8
     }).addTo(map).bindPopup('Your Location');
-    
+
     const endMarker = L.circleMarker([endPoint.lat, endPoint.lng], {
       color: '#00ff87', fillOpacity: 1, radius: 8
     }).addTo(map).bindPopup('Destination');
@@ -383,8 +407,8 @@ export const UserDashboard = () => {
 
           {/* Links */}
           <nav className="flex flex-row md:flex-col gap-1.5 overflow-x-auto w-full">
-            <button 
-              onClick={() => setActiveTab('dashboard')} 
+            <button
+              onClick={() => setActiveTab('dashboard')}
               className={`sidebar-link w-full text-left font-semibold cursor-pointer ${activeTab === 'dashboard' ? 'active' : ''}`}
             >
               <div className="flex items-center gap-3">
@@ -396,9 +420,9 @@ export const UserDashboard = () => {
                 <span className="md:hidden text-xs font-bold text-white">Dashboard</span>
               </div>
             </button>
-            
-            <button 
-              onClick={() => setActiveTab('tracking')} 
+
+            <button
+              onClick={() => setActiveTab('tracking')}
               className={`sidebar-link w-full text-left font-semibold cursor-pointer ${activeTab === 'tracking' ? 'active' : ''}`}
             >
               <div className="flex items-center gap-3">
@@ -411,8 +435,8 @@ export const UserDashboard = () => {
               </div>
             </button>
 
-            <button 
-              onClick={() => setActiveTab('routing')} 
+            <button
+              onClick={() => setActiveTab('routing')}
               className={`sidebar-link w-full text-left font-semibold cursor-pointer ${activeTab === 'routing' ? 'active' : ''}`}
             >
               <div className="flex items-center gap-3">
@@ -425,8 +449,8 @@ export const UserDashboard = () => {
               </div>
             </button>
 
-            <button 
-              onClick={() => setActiveTab('contacts')} 
+            <button
+              onClick={() => setActiveTab('contacts')}
               className={`sidebar-link w-full text-left font-semibold cursor-pointer ${activeTab === 'contacts' ? 'active' : ''}`}
             >
               <div className="flex items-center gap-3">
@@ -439,8 +463,8 @@ export const UserDashboard = () => {
               </div>
             </button>
 
-            <button 
-              onClick={() => setActiveTab('medical')} 
+            <button
+              onClick={() => setActiveTab('medical')}
               className={`sidebar-link w-full text-left font-semibold cursor-pointer ${activeTab === 'medical' ? 'active' : ''}`}
             >
               <div className="flex items-center gap-3">
@@ -453,8 +477,8 @@ export const UserDashboard = () => {
               </div>
             </button>
 
-            <button 
-              onClick={() => setActiveTab('ai')} 
+            <button
+              onClick={() => setActiveTab('ai')}
               className={`sidebar-link w-full text-left font-semibold cursor-pointer ${activeTab === 'ai' ? 'active' : ''}`}
             >
               <div className="flex items-center gap-3">
@@ -467,8 +491,8 @@ export const UserDashboard = () => {
               </div>
             </button>
 
-            <button 
-              onClick={() => setActiveTab('history')} 
+            <button
+              onClick={() => setActiveTab('history')}
               className={`sidebar-link w-full text-left font-semibold cursor-pointer ${activeTab === 'history' ? 'active' : ''}`}
             >
               <FileText className="w-4 h-4 md:w-5 md:h-5 text-cyan-400 shrink-0" />
@@ -479,8 +503,8 @@ export const UserDashboard = () => {
               <span className="md:hidden text-xs font-bold text-white">Alert History</span>
             </button>
 
-            <button 
-              onClick={() => setActiveTab('settings')} 
+            <button
+              onClick={() => setActiveTab('settings')}
               className={`sidebar-link w-full text-left font-semibold cursor-pointer ${activeTab === 'settings' ? 'active' : ''}`}
             >
               <Settings className="w-4 h-4 md:w-5 md:h-5 text-cyan-400 shrink-0" />
@@ -489,6 +513,18 @@ export const UserDashboard = () => {
                 <span className="text-[9px] text-slate-500 font-bold uppercase mt-0.5">Preferences</span>
               </div>
               <span className="md:hidden text-xs font-bold text-white">Settings</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('inbox')}
+              className={`sidebar-link w-full text-left font-semibold cursor-pointer ${activeTab === 'inbox' ? 'active' : ''}`}
+            >
+              <Mail className="w-4 h-4 md:w-5 md:h-5 text-cyan-400 shrink-0" />
+              <div className="flex flex-col text-left hidden md:flex">
+                <span className="text-sm font-bold text-slate-100 leading-none">Sandbox Inbox</span>
+                <span className="text-[9px] text-slate-[450] font-bold uppercase mt-0.5">Test Mailbox</span>
+              </div>
+              <span className="md:hidden text-xs font-bold text-white">Sandbox Inbox</span>
             </button>
           </nav>
         </div>
@@ -514,8 +550,8 @@ export const UserDashboard = () => {
         </div>
 
         {/* Mobile Logout Button (Mobile only) */}
-        <button 
-          onClick={logout} 
+        <button
+          onClick={logout}
           className="flex md:hidden p-2 bg-slate-850 border border-slate-755 hover:bg-rose-950/20 rounded-lg text-rose-400 cursor-pointer shrink-0"
           title="Sign Out"
         >
@@ -574,13 +610,13 @@ export const UserDashboard = () => {
                   <span className="w-1 h-1 rounded-full bg-emerald-500" />
                   <span className="text-slate-350 uppercase tracking-wider text-[8px] font-black">Network Strong</span>
                 </div>
-                
+
                 {/* Bell notification */}
                 <button className="p-1.5 bg-slate-950/60 hover:bg-slate-900 border border-slate-850 rounded-full relative cursor-pointer text-slate-350">
                   <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white font-extrabold text-[7px] w-3 h-3 rounded-full flex items-center justify-center border border-slate-950 shadow-[0_0_3px_rgba(239,68,68,0.5)]">3</span>
                   <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
                 </button>
-                <button 
+                <button
                   onClick={() => setActiveTab('settings')}
                   className="p-1.5 bg-slate-950/60 hover:bg-slate-900 border border-slate-850 rounded-full cursor-pointer text-slate-450 hover:text-slate-200"
                 >
@@ -591,12 +627,12 @@ export const UserDashboard = () => {
 
             {/* FIRST ROW WIDGETS: SOS (col-span-4), Voice Assistant (col-span-3), Live Location (col-span-3) */}
             <div className="grid grid-cols-1 lg:grid-cols-10 gap-4 min-h-0 items-stretch flex-[1.1]">
-              
+
               {/* SOS Column */}
               <div className="lg:col-span-4 glass-panel p-4 flex flex-col justify-between items-center text-center relative overflow-hidden bg-[#0c0508]/85 border border-red-950/40 shadow-[0_0_25px_rgba(255,30,60,0.05)]">
                 {/* HUD Coordinates Background Crosshairs & Radar Ticks */}
                 <div className="absolute inset-0 bg-[linear-gradient(rgba(255,30,60,0.01)_1px,transparent_1px),linear-gradient(90deg,rgba(255,30,60,0.01)_1px,transparent_1px)] bg-[size:16px_16px] pointer-events-none opacity-45" />
-                
+
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-15">
                   <svg className="w-full h-full text-red-500 max-w-[260px] max-h-[260px]" viewBox="0 0 100 100" fill="none" stroke="currentColor">
                     <circle cx="50" cy="50" r="45" strokeWidth="0.1" strokeDasharray="1 1.5" />
@@ -614,7 +650,7 @@ export const UserDashboard = () => {
                 </div>
 
                 <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-44 h-44 border border-red-500/5 rounded-full pointer-events-none animate-pulse" />
-                
+
                 <div className="flex flex-col gap-0.5 items-center z-10">
                   <h2 className="text-xs font-black uppercase tracking-wider text-slate-100 flex items-center gap-1.5">
                     Quick Emergency SOS <span className="text-red-500 font-sans tracking-tight">///</span>
@@ -623,7 +659,7 @@ export const UserDashboard = () => {
                     Press the SOS button to instantly alert your contacts and share live location.
                   </p>
                 </div>
-                
+
                 <div className="relative my-2 flex items-center justify-center z-10 scale-90">
                   {/* Outer Tech Ring 1 (Dotted / Dashed Spinner) */}
                   <div className="absolute w-40 h-40 rounded-full border border-dashed border-red-500/25 animate-[spin_60s_linear_infinite]" />
@@ -636,10 +672,10 @@ export const UserDashboard = () => {
                     <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-red-500 shadow-[0_0_8px_#ff1e3c]" />
                     <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-red-500 shadow-[0_0_8px_#ff1e3c]" />
                   </div>
-                  
+
                   {/* Actual Button - Slimmed */}
-                  <button 
-                    onClick={triggerManualPanic} 
+                  <button
+                    onClick={triggerManualPanic}
                     className={`sos-btn ${isEmergency ? 'bg-red-800 animate-none' : ''} cursor-pointer flex flex-col items-center justify-center z-10`}
                     style={{ width: '104px', height: '104px' }}
                   >
@@ -665,18 +701,18 @@ export const UserDashboard = () => {
                   <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Live Location</span>
                   <span className="text-[8px] text-cyan-400 font-bold bg-cyan-950/50 px-2 py-0.5 border border-cyan-500/25 rounded-md">Accuracy: 5m</span>
                 </div>
-                
+
                 {/* Map mockup - Height-constrained */}
-                <div 
+                <div
                   onClick={() => setActiveTab('routing')}
                   className="flex-1 min-h-[90px] w-full rounded-xl bg-slate-950/60 border border-slate-900 overflow-hidden relative flex items-center justify-center cursor-pointer hover:border-cyan-500/40 transition-colors my-2"
                 >
                   <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_45%,rgba(0,0,0,0.6)_80%)] z-10" />
                   <div className="absolute inset-0 bg-[linear-gradient(30deg,rgba(0,242,254,0.01)_1px,transparent_1px),linear-gradient(150deg,rgba(0,242,254,0.01)_1px,transparent_1px)] bg-[size:12px_12px] pointer-events-none opacity-30" />
-                  
+
                   <div className="absolute w-10 h-10 rounded-full border border-cyan-500/20 animate-ping" />
                   <div className="absolute w-16 h-16 rounded-full border border-cyan-500/5 animate-pulse" />
-                  
+
                   <div className="z-10 flex flex-col items-center gap-1">
                     <div className="w-7 h-7 rounded-full bg-cyan-950/90 border border-cyan-500/60 flex items-center justify-center shadow-[0_0_12px_rgba(0,242,254,0.25)] animate-bounce">
                       <Map className="w-3.5 h-3.5 text-cyan-400" />
@@ -691,8 +727,8 @@ export const UserDashboard = () => {
                     </div>
                     <span className="text-[10px] text-slate-350 truncate font-semibold">{locationAddress}</span>
                   </div>
-                  <button 
-                    onClick={() => setActiveTab('routing')} 
+                  <button
+                    onClick={() => setActiveTab('routing')}
                     className="px-2.5 py-1 bg-cyan-950/40 hover:bg-cyan-900/50 border border-cyan-500/35 rounded-lg text-[8px] font-black uppercase text-cyan-400 tracking-wider shrink-0 cursor-pointer transition-colors"
                   >
                     View Map
@@ -713,7 +749,7 @@ export const UserDashboard = () => {
                     <p className="text-[9px] text-slate-500 mt-0.5">Smart tools to discourage threats and protect you.</p>
                   </div>
                 </div>
-                
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-1.5 z-10">
                   {/* Card 1: Fake Call */}
                   <div className="p-3.5 rounded-xl bg-slate-950/40 border border-slate-900 flex flex-col gap-2.5">
@@ -727,7 +763,7 @@ export const UserDashboard = () => {
                       </div>
                     </div>
                     <p className="text-[9px] text-slate-450 leading-tight">Simulate an incoming voice call to create a safe escape.</p>
-                    <button 
+                    <button
                       onClick={() => setFakeCallActive(true)}
                       className="w-full py-1.5 bg-transparent hover:bg-red-950/10 border border-red-500/30 hover:border-red-500/60 rounded-lg text-[9px] font-black uppercase tracking-wider text-red-500 cursor-pointer transition-colors"
                     >
@@ -747,7 +783,7 @@ export const UserDashboard = () => {
                       </div>
                     </div>
                     <p className="text-[9px] text-slate-450 leading-tight">Show a deterrence recording screen to scare off targets.</p>
-                    <button 
+                    <button
                       onClick={() => setFakeRecActive(true)}
                       className="w-full py-1.5 bg-transparent hover:bg-amber-950/10 border border-amber-500/30 hover:border-amber-500/60 rounded-lg text-[9px] font-black uppercase tracking-wider text-amber-500 cursor-pointer transition-colors"
                     >
@@ -787,13 +823,13 @@ export const UserDashboard = () => {
                         </div>
                       </div>
                       <div className="flex gap-1.5">
-                        <a 
+                        <a
                           href={`tel:${contact.phone}`}
                           className="p-1 bg-slate-900 border border-slate-800 hover:border-cyan-500/40 rounded-lg text-slate-400 hover:text-cyan-400 transition-colors"
                         >
                           <PhoneCall className="w-3 h-3" />
                         </a>
-                        <button 
+                        <button
                           onClick={() => setToast({ message: `Message broadcast simulated to ${contact.name}` })}
                           className="p-1 bg-slate-900 border border-slate-800 hover:border-cyan-500/40 rounded-lg text-slate-400 hover:text-cyan-400 transition-colors cursor-pointer"
                         >
@@ -809,7 +845,7 @@ export const UserDashboard = () => {
                   )}
                 </div>
 
-                <button 
+                <button
                   onClick={() => setActiveTab('contacts')}
                   className="w-full mt-1.5 py-1.5 bg-slate-950/80 hover:bg-slate-900 border border-cyan-500/20 hover:border-cyan-500/40 rounded-lg text-[9px] font-black uppercase tracking-wider text-slate-300 flex items-center justify-center gap-1.5 cursor-pointer transition-colors shadow-[0_0_8px_rgba(0,242,254,0.03)] z-10"
                 >
@@ -884,370 +920,461 @@ export const UserDashboard = () => {
           <div className="flex-1 overflow-y-auto pr-1 flex flex-col gap-4 min-h-0">
             {/* TAB 2: SAFE ROUTING MAPS */}
             {activeTab === 'routing' && (
-          <div className="flex flex-col gap-6">
-            <div className="glass-panel p-6 flex flex-col gap-4">
-              <h3 className="text-lg font-bold text-white">Nova AI Safe Route Advisor</h3>
-              <p className="text-xs text-slate-400">
-                Instead of shortest path, search destination below to analyze light, crowd, and crime indexes to choose a safe route.
-              </p>
-              
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-bold text-slate-400">Current Geolocation (Start)</label>
-                  <input 
-                    type="text" 
+              <div className="flex flex-col gap-6">
+                <div className="glass-panel p-6 flex flex-col gap-4">
+                  <h3 className="text-lg font-bold text-white">Nova AI Safe Route Advisor</h3>
+                  <p className="text-xs text-slate-400">
+                    Instead of shortest path, search destination below to analyze light, crowd, and crime indexes to choose a safe route.
+                  </p>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-bold text-slate-400">Current Geolocation (Start)</label>
+                      <input
+                        type="text"
+                        className="input-field text-sm"
+                        value={`${startPoint.lat}, ${startPoint.lng}`}
+                        disabled
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-bold text-slate-400">Search Destination Latitude / Longitude</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="number"
+                          step="any"
+                          placeholder="Lat: e.g. 12.985"
+                          className="input-field text-sm w-1/2"
+                          value={endPoint.lat}
+                          onChange={(e) => setEndPoint(prev => ({ ...prev, lat: parseFloat(e.target.value) || 0 }))}
+                        />
+                        <input
+                          type="number"
+                          step="any"
+                          placeholder="Lng: e.g. 77.605"
+                          className="input-field text-sm w-1/2"
+                          value={endPoint.lng}
+                          onChange={(e) => setEndPoint(prev => ({ ...prev, lng: parseFloat(e.target.value) || 0 }))}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <button onClick={fetchSafeRoute} className="btn-glow-primary self-start text-xs font-bold py-2 px-6 cursor-pointer">
+                    Evaluate Safest Rerouting
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                  {/* Map Panel */}
+                  <div className="lg:col-span-2 glass-panel p-4" style={{ height: '400px' }}>
+                    <div ref={mapContainerRef} className="w-full h-full" />
+                  </div>
+
+                  {/* Score Analysis Card */}
+                  <div className="flex flex-col gap-4">
+                    {safetyScore && (
+                      <div className="glass-panel p-6 flex flex-col gap-4">
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs font-bold uppercase text-slate-400">Area Safety Score</span>
+                          <span className={`badge ${safetyScore.rating === 'Safe' ? 'badge-safe' : safetyScore.rating === 'Medium Risk' ? 'badge-medium' : 'badge-high'}`}>
+                            {safetyScore.rating}
+                          </span>
+                        </div>
+
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-4xl font-extrabold text-white">{safetyScore.overall_score}</span>
+                          <span className="text-slate-400 text-sm">/ 100</span>
+                        </div>
+
+                        <div className="flex flex-col gap-2.5 mt-2 text-xs">
+                          <div className="flex justify-between">
+                            <span className="text-slate-400">Crime Index Score:</span>
+                            <span className="font-bold">{safetyScore.crime_score}/100</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-400">Lighting (Illumination):</span>
+                            <span className="font-bold">{safetyScore.lighting_score}/100</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-400">Crowd Density index:</span>
+                            <span className="font-bold">{safetyScore.density_score}/100</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-400">Police Stations (3km):</span>
+                            <span className="font-bold text-cyan-400">{safetyScore.nearby_police}</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {routeInfo && (
+                      <div className="glass-panel p-6 flex flex-col gap-3 text-xs">
+                        <h4 className="font-bold text-white text-sm">Path Comparison</h4>
+                        <div className="border-l-2 border-cyan-400 pl-3 py-1 flex flex-col gap-0.5">
+                          <span className="font-bold text-cyan-400">Nova Guarded Route (Cyan)</span>
+                          <span className="text-slate-300">Distance: {routeInfo.safest_route.distance_km} km | ETA: {routeInfo.safest_route.eta_minutes} mins</span>
+                          <span className="text-emerald-400 font-semibold">{routeInfo.safest_route.benefit}</span>
+                        </div>
+                        <div className="border-l-2 border-red-500 pl-3 py-1 flex flex-col gap-0.5 mt-2">
+                          <span className="font-bold text-red-500">Shortest Route (Dashed Red)</span>
+                          <span className="text-slate-300">Distance: {routeInfo.shortest_route.distance_km} km | ETA: {routeInfo.shortest_route.eta_minutes} mins</span>
+                          <span className="text-rose-400 font-semibold">{routeInfo.shortest_route.warning}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 3: SOS CONTACTS */}
+            {activeTab === 'contacts' && (
+              <div className="glass-panel p-8 flex flex-col gap-6">
+                <div>
+                  <h2 className="text-lg font-bold text-white">Emergency Contacts</h2>
+                  <p className="text-xs text-slate-400">Add trusted family, friends, or agencies. SafeNova will instantly dispatch prioritized notifications to these recipients.</p>
+                </div>
+
+                <form onSubmit={handleAddContact} className="grid grid-cols-1 md:grid-cols-3 gap-4 border-b border-slate-800 pb-6">
+                  <input
+                    type="text"
+                    required
                     className="input-field text-sm"
-                    value={`${startPoint.lat}, ${startPoint.lng}`}
-                    disabled
+                    placeholder="Name"
+                    value={newContact.name}
+                    onChange={(e) => setNewContact(c => ({ ...c, name: e.target.value }))}
                   />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-bold text-slate-400">Search Destination Latitude / Longitude</label>
-                  <div className="flex gap-2">
-                    <input 
-                      type="number" 
-                      step="any"
-                      placeholder="Lat: e.g. 12.985"
-                      className="input-field text-sm w-1/2"
-                      value={endPoint.lat}
-                      onChange={(e) => setEndPoint(prev => ({ ...prev, lat: parseFloat(e.target.value) || 0 }))}
-                    />
-                    <input 
-                      type="number" 
-                      step="any"
-                      placeholder="Lng: e.g. 77.605"
-                      className="input-field text-sm w-1/2"
-                      value={endPoint.lng}
-                      onChange={(e) => setEndPoint(prev => ({ ...prev, lng: parseFloat(e.target.value) || 0 }))}
-                    />
-                  </div>
-                </div>
-              </div>
-              
-              <button onClick={fetchSafeRoute} className="btn-glow-primary self-start text-xs font-bold py-2 px-6 cursor-pointer">
-                Evaluate Safest Rerouting
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Map Panel */}
-              <div className="lg:col-span-2 glass-panel p-4" style={{ height: '400px' }}>
-                <div ref={mapContainerRef} className="w-full h-full" />
-              </div>
-              
-              {/* Score Analysis Card */}
-              <div className="flex flex-col gap-4">
-                {safetyScore && (
-                  <div className="glass-panel p-6 flex flex-col gap-4">
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs font-bold uppercase text-slate-400">Area Safety Score</span>
-                      <span className={`badge ${safetyScore.rating === 'Safe' ? 'badge-safe' : safetyScore.rating === 'Medium Risk' ? 'badge-medium' : 'badge-high'}`}>
-                        {safetyScore.rating}
-                      </span>
-                    </div>
-                    
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-4xl font-extrabold text-white">{safetyScore.overall_score}</span>
-                      <span className="text-slate-400 text-sm">/ 100</span>
-                    </div>
-                    
-                    <div className="flex flex-col gap-2.5 mt-2 text-xs">
-                      <div className="flex justify-between">
-                        <span className="text-slate-400">Crime Index Score:</span>
-                        <span className="font-bold">{safetyScore.crime_score}/100</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-400">Lighting (Illumination):</span>
-                        <span className="font-bold">{safetyScore.lighting_score}/100</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-400">Crowd Density index:</span>
-                        <span className="font-bold">{safetyScore.density_score}/100</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-400">Police Stations (3km):</span>
-                        <span className="font-bold text-cyan-400">{safetyScore.nearby_police}</span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {routeInfo && (
-                  <div className="glass-panel p-6 flex flex-col gap-3 text-xs">
-                    <h4 className="font-bold text-white text-sm">Path Comparison</h4>
-                    <div className="border-l-2 border-cyan-400 pl-3 py-1 flex flex-col gap-0.5">
-                      <span className="font-bold text-cyan-400">Nova Guarded Route (Cyan)</span>
-                      <span className="text-slate-300">Distance: {routeInfo.safest_route.distance_km} km | ETA: {routeInfo.safest_route.eta_minutes} mins</span>
-                      <span className="text-emerald-400 font-semibold">{routeInfo.safest_route.benefit}</span>
-                    </div>
-                    <div className="border-l-2 border-red-500 pl-3 py-1 flex flex-col gap-0.5 mt-2">
-                      <span className="font-bold text-red-500">Shortest Route (Dashed Red)</span>
-                      <span className="text-slate-300">Distance: {routeInfo.shortest_route.distance_km} km | ETA: {routeInfo.shortest_route.eta_minutes} mins</span>
-                      <span className="text-rose-400 font-semibold">{routeInfo.shortest_route.warning}</span>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* TAB 3: SOS CONTACTS */}
-        {activeTab === 'contacts' && (
-          <div className="glass-panel p-8 flex flex-col gap-6">
-            <div>
-              <h2 className="text-lg font-bold text-white">Emergency Contacts</h2>
-              <p className="text-xs text-slate-400">Add trusted family, friends, or agencies. SafeNova will instantly dispatch prioritized notifications to these recipients.</p>
-            </div>
-
-            <form onSubmit={handleAddContact} className="grid grid-cols-1 md:grid-cols-3 gap-4 border-b border-slate-800 pb-6">
-              <input 
-                type="text" 
-                required
-                className="input-field text-sm" 
-                placeholder="Name" 
-                value={newContact.name}
-                onChange={(e) => setNewContact(c => ({ ...c, name: e.target.value }))}
-              />
-              <input 
-                type="text" 
-                required
-                className="input-field text-sm" 
-                placeholder="Phone (e.g. +1...)" 
-                value={newContact.phone}
-                onChange={(e) => setNewContact(c => ({ ...c, phone: e.target.value }))}
-              />
-              <input 
-                type="email" 
-                required
-                className="input-field text-sm" 
-                placeholder="Email Address" 
-                value={newContact.email}
-                onChange={(e) => setNewContact(c => ({ ...c, email: e.target.value }))}
-              />
-              
-              <div className="md:col-span-3 flex flex-wrap gap-6 mt-2 text-xs font-semibold text-slate-300">
-                <label className="flex items-center gap-2">
-                  <input type="checkbox" checked={newContact.notify_sms} onChange={(e) => setNewContact(c => ({ ...c, notify_sms: e.target.checked }))} />
-                  Send SMS
-                </label>
-                <label className="flex items-center gap-2">
-                  <input type="checkbox" checked={newContact.notify_whatsapp} onChange={(e) => setNewContact(c => ({ ...c, notify_whatsapp: e.target.checked }))} />
-                  Send WhatsApp
-                </label>
-                <label className="flex items-center gap-2">
-                  <input type="checkbox" checked={newContact.notify_email} onChange={(e) => setNewContact(c => ({ ...c, notify_email: e.target.checked }))} />
-                  Send Email
-                </label>
-                <label className="flex items-center gap-2">
-                  <input type="checkbox" checked={newContact.notify_call} onChange={(e) => setNewContact(c => ({ ...c, notify_call: e.target.checked }))} />
-                  Voice Call Alert
-                </label>
-              </div>
-
-              <button type="submit" className="btn-glow-primary text-xs py-2 px-4 mt-2 self-start flex items-center gap-1 cursor-pointer">
-                <Plus className="w-4 h-4" /> Add SOS Contact
-              </button>
-            </form>
-
-            <div className="flex flex-col gap-3">
-              <h4 className="font-bold text-sm text-white">Your Safety Contacts</h4>
-              {contacts.length === 0 ? (
-                <p className="text-xs text-slate-500">No contacts set up. Please add at least one contact to receive alert notifications.</p>
-              ) : (
-                <div className="flex flex-col gap-2.5">
-                  {contacts.map(c => (
-                    <div key={c.id} className="flex justify-between items-center bg-slate-900/60 p-4 border border-slate-800 rounded-lg">
-                      <div className="flex flex-col gap-1">
-                        <span className="font-bold text-sm text-white">{c.name}</span>
-                        <div className="flex flex-wrap gap-x-4 text-[10px] text-slate-400">
-                          <span>Phone: {c.phone}</span>
-                          <span>Email: {c.email}</span>
-                        </div>
-                        <div className="flex gap-2 mt-1">
-                          {c.notify_sms && <span className="text-[9px] bg-cyan-950/40 text-cyan-400 px-2 py-0.5 rounded border border-cyan-800/40">SMS</span>}
-                          {c.notify_whatsapp && <span className="text-[9px] bg-emerald-950/40 text-emerald-400 px-2 py-0.5 rounded border border-emerald-800/40">WhatsApp</span>}
-                          {c.notify_email && <span className="text-[9px] bg-blue-950/40 text-blue-400 px-2 py-0.5 rounded border border-blue-800/40">Email</span>}
-                          {c.notify_call && <span className="text-[9px] bg-purple-950/40 text-purple-400 px-2 py-0.5 rounded border border-purple-800/40">Voice Call</span>}
-                        </div>
-                      </div>
-                      <button onClick={() => handleDeleteContact(c.id)} className="p-2 text-rose-400 hover:bg-rose-950/30 rounded cursor-pointer">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* TAB 4: MEDICAL PROFILE */}
-        {activeTab === 'medical' && (
-          <div className="glass-panel p-8 flex flex-col gap-6">
-            <div>
-              <h2 className="text-lg font-bold text-white">Guardian Setup & Medical Card</h2>
-              <p className="text-xs text-slate-400">These details are attached securely to the outbound SOS notification emails and dispatch alerts for rescuers.</p>
-            </div>
-
-            <div className="flex flex-col gap-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-bold text-slate-350">Blood Group</label>
-                  <select 
+                  <input
+                    type="text"
+                    required
                     className="input-field text-sm"
-                    value={bloodGroup}
-                    onChange={(e) => setBloodGroup(e.target.value)}
+                    placeholder="Phone (e.g. +1...)"
+                    value={newContact.phone}
+                    onChange={(e) => setNewContact(c => ({ ...c, phone: e.target.value }))}
+                  />
+                  <input
+                    type="email"
+                    required
+                    className="input-field text-sm"
+                    placeholder="Email Address"
+                    value={newContact.email}
+                    onChange={(e) => setNewContact(c => ({ ...c, email: e.target.value }))}
+                  />
+
+                  <div className="md:col-span-3 flex flex-wrap gap-6 mt-2 text-xs font-semibold text-slate-300">
+                    <label className="flex items-center gap-2">
+                      <input type="checkbox" checked={newContact.notify_sms} onChange={(e) => setNewContact(c => ({ ...c, notify_sms: e.target.checked }))} />
+                      Send SMS
+                    </label>
+                    <label className="flex items-center gap-2">
+                      <input type="checkbox" checked={newContact.notify_whatsapp} onChange={(e) => setNewContact(c => ({ ...c, notify_whatsapp: e.target.checked }))} />
+                      Send WhatsApp
+                    </label>
+                    <label className="flex items-center gap-2">
+                      <input type="checkbox" checked={newContact.notify_email} onChange={(e) => setNewContact(c => ({ ...c, notify_email: e.target.checked }))} />
+                      Send Email
+                    </label>
+                    <label className="flex items-center gap-2">
+                      <input type="checkbox" checked={newContact.notify_call} onChange={(e) => setNewContact(c => ({ ...c, notify_call: e.target.checked }))} />
+                      Voice Call Alert
+                    </label>
+                  </div>
+
+                  <button type="submit" className="btn-glow-primary text-xs py-2 px-4 mt-2 self-start flex items-center gap-1 cursor-pointer">
+                    <Plus className="w-4 h-4" /> Add SOS Contact
+                  </button>
+                </form>
+
+                <div className="flex flex-col gap-3">
+                  <h4 className="font-bold text-sm text-white">Your Safety Contacts</h4>
+                  {contacts.length === 0 ? (
+                    <p className="text-xs text-slate-500">No contacts set up. Please add at least one contact to receive alert notifications.</p>
+                  ) : (
+                    <div className="flex flex-col gap-2.5">
+                      {contacts.map(c => (
+                        <div key={c.id} className="flex justify-between items-center bg-slate-900/60 p-4 border border-slate-800 rounded-lg">
+                          <div className="flex flex-col gap-1">
+                            <span className="font-bold text-sm text-white">{c.name}</span>
+                            <div className="flex flex-wrap gap-x-4 text-[10px] text-slate-400">
+                              <span>Phone: {c.phone}</span>
+                              <span>Email: {c.email}</span>
+                            </div>
+                            <div className="flex gap-2 mt-1">
+                              {c.notify_sms && <span className="text-[9px] bg-cyan-950/40 text-cyan-400 px-2 py-0.5 rounded border border-cyan-800/40">SMS</span>}
+                              {c.notify_whatsapp && <span className="text-[9px] bg-emerald-950/40 text-emerald-400 px-2 py-0.5 rounded border border-emerald-800/40">WhatsApp</span>}
+                              {c.notify_email && <span className="text-[9px] bg-blue-950/40 text-blue-400 px-2 py-0.5 rounded border border-blue-800/40">Email</span>}
+                              {c.notify_call && <span className="text-[9px] bg-purple-950/40 text-purple-400 px-2 py-0.5 rounded border border-purple-800/40">Voice Call</span>}
+                            </div>
+                          </div>
+                          <button onClick={() => handleDeleteContact(c.id)} className="p-2 text-rose-400 hover:bg-rose-950/30 rounded cursor-pointer">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* TAB 4: MEDICAL PROFILE */}
+            {activeTab === 'medical' && (
+              <div className="glass-panel p-8 flex flex-col gap-6">
+                <div>
+                  <h2 className="text-lg font-bold text-white">Guardian Setup & Medical Card</h2>
+                  <p className="text-xs text-slate-400">These details are attached securely to the outbound SOS notification emails and dispatch alerts for rescuers.</p>
+                </div>
+
+                <div className="flex flex-col gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-bold text-slate-350">Blood Group</label>
+                      <select
+                        className="input-field text-sm"
+                        value={bloodGroup}
+                        onChange={(e) => setBloodGroup(e.target.value)}
+                      >
+                        <option value="">Select blood group</option>
+                        <option value="A+">A+</option>
+                        <option value="A-">A-</option>
+                        <option value="B+">B+</option>
+                        <option value="B-">B-</option>
+                        <option value="AB+">AB+</option>
+                        <option value="AB-">AB-</option>
+                        <option value="O+">O+</option>
+                        <option value="O-">O-</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-slate-350">Medical Notes, Allergies, or Emergency Remarks</label>
+                    <textarea
+                      rows={4}
+                      className="input-field text-sm"
+                      placeholder="Include any critical health complications, allergies, or emergency contact directions here..."
+                      value={medicalNotes}
+                      onChange={(e) => setMedicalNotes(e.target.value)}
+                    />
+                  </div>
+
+                  <button onClick={handleSaveProfile} className="btn-glow-primary self-start font-bold text-xs py-2.5 px-6 cursor-pointer">
+                    Sync Medical Card Info
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 5: LIVE TRACKING */}
+            {activeTab === 'tracking' && (
+              <div className="glass-panel p-8 flex flex-col gap-6">
+                <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                  <Radio className="w-5 h-5 text-cyan-400 animate-pulse" /> Live Tracking Monitor
+                </h2>
+                <p className="text-xs text-slate-400">Stream coordinates real-time to guardians. Your active tracking session link:</p>
+                <div className="p-4 bg-slate-950/60 border border-slate-900 rounded-xl flex flex-col gap-3">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-400 font-bold uppercase">Tracking Code</span>
+                    <span className="font-mono text-cyan-400 font-bold text-sm">{user?.tracking_code}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-400 font-bold uppercase">Public Link</span>
+                    <a href={`/guardian?code=${user?.tracking_code}`} target="_blank" rel="noreferrer" className="text-cyan-400 font-bold hover:underline">
+                      Open Guardian Live Viewer
+                    </a>
+                  </div>
+                </div>
+                <div className="h-96 w-full rounded-xl bg-slate-950/80 border border-slate-900 flex items-center justify-center text-slate-500 font-semibold italic">
+                  <div className="text-center flex flex-col items-center gap-3">
+                    <div className="w-12 h-12 rounded-full border border-cyan-500/25 animate-ping flex items-center justify-center text-cyan-400 bg-cyan-950/20">
+                      <Map className="w-5 h-5" />
+                    </div>
+                    <span className="text-xs text-slate-400 uppercase tracking-widest font-bold">Active Geolocation Stream Online</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 6: AI GUARDIAN */}
+            {activeTab === 'ai' && (
+              <div className="glass-panel p-8 flex flex-col gap-6">
+                <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                  <ShieldCheck className="w-5 h-5 text-cyan-400" /> AI Guardian Assist
+                </h2>
+                <p className="text-xs text-slate-400">Chat with Nova to analyze safe paths, check medical notes, or ask for guidance.</p>
+
+                <div className="flex flex-col gap-4 h-80 bg-slate-950/60 border border-slate-900 rounded-xl p-4 overflow-y-auto">
+                  <div className="p-3 bg-[#0d0f1c]/80 border border-cyan-500/10 rounded-xl self-start max-w-xs text-xs text-slate-200">
+                    <strong>Nova:</strong> Hello! I am your SafeNova Guardian Assistant. I monitor your status and will trigger alerts if emergency phrases are heard. How can I help you?
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  <input type="text" placeholder="Ask Nova anything..." className="input-field text-sm flex-1 animate-pulse" disabled />
+                  <button className="btn-glow-primary text-xs px-4 py-2 cursor-pointer font-bold opacity-50" disabled>Send</button>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 7: ALERT HISTORY */}
+            {activeTab === 'history' && (
+              <div className="glass-panel p-8 flex flex-col gap-6">
+                <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-cyan-400" /> Alert History Log
+                </h2>
+                <p className="text-xs text-slate-400">Review past emergency triggers and resolved incident codes.</p>
+
+                <div className="flex flex-col gap-3">
+                  <div className="p-4 bg-slate-900/40 border border-slate-800 rounded-xl flex justify-between items-center">
+                    <div className="flex flex-col gap-1 text-xs">
+                      <span className="font-bold text-slate-200">Incident Code: {user?.tracking_code}</span>
+                      <span className="text-slate-500">August 03, 2026 at 17:40:25</span>
+                    </div>
+                    <span className="px-2.5 py-1 rounded bg-emerald-950/40 text-emerald-400 border border-emerald-800/40 text-[9px] font-black uppercase">
+                      Resolved Cleanly
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 8: SETTINGS */}
+            {activeTab === 'settings' && (
+              <div className="glass-panel p-8 flex flex-col gap-6">
+                <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                  <Settings className="w-5 h-5 text-cyan-400" /> System Preferences
+                </h2>
+                <p className="text-xs text-slate-400">Configure secret phrases, speech backoff, and notifier delivery limits.</p>
+
+                <div className="flex flex-col gap-4">
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-slate-350">Custom Emergency Wake Word</label>
+                    <input
+                      type="text"
+                      className="input-field text-sm"
+                      placeholder="e.g. Jarvis save me"
+                      value={wakeWord}
+                      onChange={(e) => setWakeWord(e.target.value)}
+                    />
+                    <span className="text-[10px] text-slate-500">In addition to the standard trigger phrases: "SOS", "Help me", "Emergency", "I am in danger", "Save me".</span>
+                  </div>
+
+                  <button onClick={handleSaveProfile} className="btn-glow-primary text-xs py-2 px-6 font-bold self-start cursor-pointer">
+                    Save System Preferences
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 9: SANDBOX INBOX */}
+            {activeTab === 'inbox' && (
+              <div className="glass-panel p-6 flex flex-col gap-6 h-full min-h-0">
+                <div className="flex justify-between items-center shrink-0">
+                  <div>
+                    <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                      <Mail className="w-5 h-5 text-cyan-400" /> Sandbox Inbox
+                    </h2>
+                    <p className="text-xs text-slate-400">
+                      Simulated emergency emails received by contacts during development and demo.
+                    </p>
+                  </div>
+                  <button
+                    onClick={fetchMockEmails}
+                    className="btn-glow-primary text-[10px] font-bold py-2 px-4 cursor-pointer"
                   >
-                    <option value="">Select blood group</option>
-                    <option value="A+">A+</option>
-                    <option value="A-">A-</option>
-                    <option value="B+">B+</option>
-                    <option value="B-">B-</option>
-                    <option value="AB+">AB+</option>
-                    <option value="AB-">AB-</option>
-                    <option value="O+">O+</option>
-                    <option value="O-">O-</option>
-                  </select>
+                    Refresh Mailbox
+                  </button>
+                </div>
+
+                <div className="flex-1 flex gap-6 min-h-0 overflow-hidden">
+                  {/* Left Column: Email list */}
+                  <div className="w-80 border-r border-slate-900 pr-6 flex flex-col gap-3 min-h-0 overflow-y-auto">
+                    {mockEmails.length === 0 ? (
+                      <div className="py-12 bg-slate-950/20 border border-slate-900 rounded-xl text-center text-xs text-slate-500 font-semibold italic">
+                        No sandbox emails sent yet.<br />
+                        <button
+                          onClick={triggerManualPanic}
+                          className="mt-3 text-red-500 font-extrabold hover:underline"
+                        >
+                          Trigger SOS Alert Now
+                        </button>
+                      </div>
+                    ) : (
+                      mockEmails.map((email) => (
+                        <div
+                          key={email.filename}
+                          onClick={() => setSelectedEmail(email)}
+                          className={`p-4 border rounded-xl flex flex-col gap-2 cursor-pointer transition-all hover:bg-slate-900/60 ${selectedEmail?.filename === email.filename ? 'bg-[#0f1122]/70 border-cyan-500/50 shadow-[0_0_10px_rgba(0,242,254,0.05)]' : 'bg-slate-950/40 border-slate-900'}`}
+                        >
+                          <div className="flex justify-between items-center text-[10px]">
+                            <span className="font-black text-cyan-400 uppercase font-mono">ALERT MAIL</span>
+                            <span className="text-slate-500 font-bold">
+                              {new Date(email.last_modified * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
+                          <span className="text-xs font-bold text-white truncate">To: {email.recipient}</span>
+                          <span className="text-[10px] text-slate-450 leading-snug line-clamp-2">
+                            🚨 Emergency SOS Alert from {user?.name || 'vis'} - Live Coordinates Attached.
+                          </span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  {/* Right Column: Preview pane */}
+                  <div className="flex-1 bg-slate-950/40 border border-slate-950 rounded-xl relative overflow-hidden flex flex-col min-h-0">
+                    {selectedEmail ? (
+                      <React.Fragment>
+                        <div className="p-3.5 bg-[#080a13] border-b border-slate-900 flex justify-between items-center shrink-0">
+                          <div className="flex items-center gap-2">
+                            <span className="w-2.5 h-2.5 rounded-full bg-cyan-500 animate-pulse" />
+                            <span className="text-xs font-bold text-slate-200">Email Display Render (Live)</span>
+                          </div>
+                          <a
+                            href={`${API_URL.replace('/api', '')}${selectedEmail.url}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[10px] text-cyan-400 font-bold hover:underline"
+                          >
+                            Open in New Tab
+                          </a>
+                        </div>
+                        <div className="flex-1 bg-[#ffffff] min-h-0 h-full w-full">
+                          <iframe
+                            src={`${API_URL.replace('/api', '')}${selectedEmail.url}`}
+                            title="Mock Email Preview"
+                            className="w-full h-full border-none"
+                          />
+                        </div>
+                      </React.Fragment>
+                    ) : (
+                      <div className="flex-1 flex items-center justify-center text-slate-500 font-semibold italic text-xs">
+                        Select an email from the left to preview content
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-slate-350">Medical Notes, Allergies, or Emergency Remarks</label>
-                <textarea 
-                  rows={4}
-                  className="input-field text-sm" 
-                  placeholder="Include any critical health complications, allergies, or emergency contact directions here..."
-                  value={medicalNotes}
-                  onChange={(e) => setMedicalNotes(e.target.value)}
-                />
-              </div>
-
-              <button onClick={handleSaveProfile} className="btn-glow-primary self-start font-bold text-xs py-2.5 px-6 cursor-pointer">
-                Sync Medical Card Info
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* TAB 5: LIVE TRACKING */}
-        {activeTab === 'tracking' && (
-          <div className="glass-panel p-8 flex flex-col gap-6">
-            <h2 className="text-lg font-bold text-white flex items-center gap-2">
-              <Radio className="w-5 h-5 text-cyan-400 animate-pulse" /> Live Tracking Monitor
-            </h2>
-            <p className="text-xs text-slate-400">Stream coordinates real-time to guardians. Your active tracking session link:</p>
-            <div className="p-4 bg-slate-950/60 border border-slate-900 rounded-xl flex flex-col gap-3">
-              <div className="flex justify-between items-center text-xs">
-                <span className="text-slate-400 font-bold uppercase">Tracking Code</span>
-                <span className="font-mono text-cyan-400 font-bold text-sm">{user?.tracking_code}</span>
-              </div>
-              <div className="flex justify-between items-center text-xs">
-                <span className="text-slate-400 font-bold uppercase">Public Link</span>
-                <a href={`/guardian?code=${user?.tracking_code}`} target="_blank" rel="noreferrer" className="text-cyan-400 font-bold hover:underline">
-                  Open Guardian Live Viewer
-                </a>
-              </div>
-            </div>
-            <div className="h-96 w-full rounded-xl bg-slate-950/80 border border-slate-900 flex items-center justify-center text-slate-500 font-semibold italic">
-              <div className="text-center flex flex-col items-center gap-3">
-                <div className="w-12 h-12 rounded-full border border-cyan-500/25 animate-ping flex items-center justify-center text-cyan-400 bg-cyan-950/20">
-                  <Map className="w-5 h-5" />
-                </div>
-                <span className="text-xs text-slate-400 uppercase tracking-widest font-bold">Active Geolocation Stream Online</span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* TAB 6: AI GUARDIAN */}
-        {activeTab === 'ai' && (
-          <div className="glass-panel p-8 flex flex-col gap-6">
-            <h2 className="text-lg font-bold text-white flex items-center gap-2">
-              <ShieldCheck className="w-5 h-5 text-cyan-400" /> AI Guardian Assist
-            </h2>
-            <p className="text-xs text-slate-400">Chat with Nova to analyze safe paths, check medical notes, or ask for guidance.</p>
-            
-            <div className="flex flex-col gap-4 h-80 bg-slate-950/60 border border-slate-900 rounded-xl p-4 overflow-y-auto">
-              <div className="p-3 bg-[#0d0f1c]/80 border border-cyan-500/10 rounded-xl self-start max-w-xs text-xs text-slate-200">
-                <strong>Nova:</strong> Hello! I am your SafeNova Guardian Assistant. I monitor your status and will trigger alerts if emergency phrases are heard. How can I help you?
-              </div>
-            </div>
-            
-            <div className="flex gap-2">
-              <input type="text" placeholder="Ask Nova anything..." className="input-field text-sm flex-1 animate-pulse" disabled />
-              <button className="btn-glow-primary text-xs px-4 py-2 cursor-pointer font-bold opacity-50" disabled>Send</button>
-            </div>
-          </div>
-        )}
-
-        {/* TAB 7: ALERT HISTORY */}
-        {activeTab === 'history' && (
-          <div className="glass-panel p-8 flex flex-col gap-6">
-            <h2 className="text-lg font-bold text-white flex items-center gap-2">
-              <FileText className="w-5 h-5 text-cyan-400" /> Alert History Log
-            </h2>
-            <p className="text-xs text-slate-400">Review past emergency triggers and resolved incident codes.</p>
-            
-            <div className="flex flex-col gap-3">
-              <div className="p-4 bg-slate-900/40 border border-slate-800 rounded-xl flex justify-between items-center">
-                <div className="flex flex-col gap-1 text-xs">
-                  <span className="font-bold text-slate-200">Incident Code: {user?.tracking_code}</span>
-                  <span className="text-slate-500">August 03, 2026 at 17:40:25</span>
-                </div>
-                <span className="px-2.5 py-1 rounded bg-emerald-950/40 text-emerald-400 border border-emerald-800/40 text-[9px] font-black uppercase">
-                  Resolved Cleanly
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* TAB 8: SETTINGS */}
-        {activeTab === 'settings' && (
-          <div className="glass-panel p-8 flex flex-col gap-6">
-            <h2 className="text-lg font-bold text-white flex items-center gap-2">
-              <Settings className="w-5 h-5 text-cyan-400" /> System Preferences
-            </h2>
-            <p className="text-xs text-slate-400">Configure secret phrases, speech backoff, and notifier delivery limits.</p>
-            
-            <div className="flex flex-col gap-4">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-bold text-slate-350">Custom Emergency Wake Word</label>
-                <input 
-                  type="text" 
-                  className="input-field text-sm" 
-                  placeholder="e.g. Jarvis save me"
-                  value={wakeWord}
-                  onChange={(e) => setWakeWord(e.target.value)}
-                />
-                <span className="text-[10px] text-slate-500">In addition to the standard trigger phrases: "SOS", "Help me", "Emergency", "I am in danger", "Save me".</span>
-              </div>
-
-              <button onClick={handleSaveProfile} className="btn-glow-primary text-xs py-2 px-6 font-bold self-start cursor-pointer">
-                Save System Preferences
-              </button>
-            </div>
-          </div>
-        )}
+            )}
           </div>
         )}
       </main>
 
       {/* Defensive Tool Overlay Components */}
-      <FakeCall 
-        active={fakeCallActive} 
-        onClose={() => setFakeCallActive(false)} 
+      <FakeCall
+        active={fakeCallActive}
+        onClose={() => setFakeCallActive(false)}
         callerName="Father"
       />
-      <FakeRecording 
-        active={fakeRecActive} 
-        onClose={() => setFakeRecActive(false)} 
+      <FakeRecording
+        active={fakeRecActive}
+        onClose={() => setFakeRecActive(false)}
       />
 
       {/* Strobe Flash Overlay */}
       {strobeActive && (
-        <div 
+        <div
           onClick={() => setStrobeActive(false)}
           className="fixed inset-0 z-[9999] bg-white pointer-events-auto animate-[strobe-flash_0.08s_infinite]"
         />

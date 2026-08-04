@@ -294,3 +294,20 @@ def get_evidence_file(filename: str):
     if not os.path.exists(filepath):
         raise HTTPException(status_code=404, detail="Evidence file not found")
     return FileResponse(filepath)
+
+@router.get("/mock-emails")
+def get_mock_emails():
+    import glob
+    # Search for received_email prefix in the uploads folder
+    files = glob.glob(os.path.join(settings.UPLOAD_DIR, "received_email_*.html"))
+    emails = []
+    for f in sorted(files, key=os.path.getmtime, reverse=True):
+        filename = os.path.basename(f)
+        recipient = filename.replace("received_email_", "").replace(".html", "")
+        emails.append({
+            "filename": filename,
+            "recipient": recipient,
+            "url": f"/api/emergency/evidence-file/{filename}",
+            "last_modified": os.path.getmtime(f)
+        })
+    return emails
