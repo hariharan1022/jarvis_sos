@@ -27,8 +27,20 @@ export const EmergencyProvider = ({ children }) => {
     whatsappSent: null,
     callSent: null,
     smsError: null,
+    smsError: null,
     emailError: null,
     whatsappError: null
+  });
+
+  const [sosTimers, setSosTimers] = useState({
+    gpsStart: null,
+    gpsEnd: null,
+    apiStart: null,
+    apiEnd: null,
+    smsEnd: null,
+    emailEnd: null,
+    whatsappEnd: null,
+    callEnd: null
   });
 
   const [currentAddress, setCurrentAddress] = useState('Unknown Location');
@@ -130,8 +142,13 @@ export const EmergencyProvider = ({ children }) => {
         try {
           const data = JSON.parse(event.data);
           if (data.type === 'notification_status') {
-            const statusVal = data.status === 'success' ? true : data.status === 'retrying' ? 'retrying' : false;
-            setSosState(prev => {
+              const statusVal = data.status === 'success' ? true : data.status === 'retrying' ? 'retrying' : false;
+              
+              if (data.status === 'success') {
+                setSosTimers(prev => ({ ...prev, [`${data.channel}End`]: performance.now() }));
+              }
+
+              setSosState(prev => {
               const next = { 
                 ...prev, 
                 [`${data.channel}Sent`]: statusVal,
@@ -526,6 +543,17 @@ export const EmergencyProvider = ({ children }) => {
       callSent: null
     });
 
+    setSosTimers({
+      gpsStart: performance.now(),
+      gpsEnd: null,
+      apiStart: null,
+      apiEnd: null,
+      smsEnd: null,
+      emailEnd: null,
+      whatsappEnd: null,
+      callEnd: null
+    });
+
     let batteryLevel = 100;
     try {
       const bat = await navigator.getBattery();
@@ -535,6 +563,10 @@ export const EmergencyProvider = ({ children }) => {
     navigator.geolocation.getCurrentPosition(
       async ({ coords: { latitude, longitude } }) => {
         console.log(`[Emergency] GPS acquired: ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`);
+        
+        const now = performance.now();
+        setSosTimers(prev => ({ ...prev, gpsEnd: now, apiStart: now }));
+
         setSosState(prev => ({ ...prev, locationAcquired: true, gpsError: null }));
         
         let geocodedAddress = `Lat ${latitude.toFixed(4)}, Lng ${longitude.toFixed(4)}`;
@@ -588,6 +620,9 @@ export const EmergencyProvider = ({ children }) => {
       });
       if (res.ok) {
         const session = await res.json();
+        
+        setSosTimers(prev => ({ ...prev, apiEnd: performance.now() }));
+
         addDebugLog(`✅ Backend SOS Acknowledged. ID: ${session.tracking_code}`);
         console.log('[Emergency] ✅ Backend acknowledged SOS. Session:', session.tracking_code);
         setActiveSession(session);
@@ -721,6 +756,7 @@ export const EmergencyProvider = ({ children }) => {
       micPermissionError,
       voiceGuardianEnabled,
       sosState,
+      sosTimers,
       setVoiceGuardianEnabled,
       requestMicPermissionAndStart,
       triggerEmergency,

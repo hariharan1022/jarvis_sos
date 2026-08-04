@@ -14,7 +14,12 @@ import 'leaflet/dist/leaflet.css';
 
 export const UserDashboard = () => {
   const { user, token, logout, updateProfile, API_URL } = useAuth();
-  const { isEmergency, activeSession, triggerEmergency, resolveEmergency, speechStatus, sosState } = useEmergency();
+  const { isEmergency, activeSession, triggerEmergency, resolveEmergency, speechStatus, sosState, sosTimers } = useEmergency();
+
+  const getElapsed = (endTime) => {
+    if (!endTime || !sosTimers?.gpsStart) return '';
+    return `${Math.round(endTime - sosTimers.gpsStart)}ms`;
+  };
 
   // Dashboard navigation tabs: dashboard, contacts, medical, routing, settings, inbox
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -685,10 +690,11 @@ export const UserDashboard = () => {
                       Emergency Activated
                     </div>
 
-                    <div className="flex flex-col gap-3 w-full max-w-[240px] text-left">
+                    <div className="flex flex-col gap-3 w-full max-w-[280px] text-left">
                       <div className="flex items-center gap-3 text-sm font-medium">
                         <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                        <span className="text-emerald-100">Contacts Loaded</span>
+                        <span className="text-emerald-100 flex-1">Contacts Loaded</span>
+                        <span className="text-[10px] text-slate-500">0ms</span>
                       </div>
 
                       <div className="flex items-center gap-3 text-sm font-medium">
@@ -699,9 +705,10 @@ export const UserDashboard = () => {
                         ) : (
                           <Loader2 className="w-4 h-4 text-cyan-500 animate-spin" />
                         )}
-                        <span className={sosState?.locationAcquired ? "text-emerald-100" : sosState?.gpsError ? "text-red-400" : "text-slate-300"}>
+                        <span className={`flex-1 ${sosState?.locationAcquired ? "text-emerald-100" : sosState?.gpsError ? "text-red-400" : "text-slate-300"}`}>
                           {sosState?.gpsError ? sosState.gpsError : 'Location Acquired'}
                         </span>
+                        <span className="text-[10px] text-cyan-500 font-mono">{getElapsed(sosTimers?.gpsEnd)}</span>
                       </div>
 
                       <div className="flex items-center gap-3 text-sm font-medium">
@@ -712,9 +719,10 @@ export const UserDashboard = () => {
                         ) : (
                           <Loader2 className="w-4 h-4 text-cyan-500 animate-spin" />
                         )}
-                        <span className={sosState?.backendTriggered ? "text-emerald-100" : sosState?.errorMsg ? "text-red-400" : "text-slate-300"}>
+                        <span className={`flex-1 ${sosState?.backendTriggered ? "text-emerald-100" : sosState?.errorMsg ? "text-red-400" : "text-slate-300"}`}>
                           {sosState?.errorMsg ? sosState.errorMsg : 'Emergency API Activated'}
                         </span>
+                        <span className="text-[10px] text-cyan-500 font-mono">{getElapsed(sosTimers?.apiEnd)}</span>
                       </div>
 
                       <div className="flex items-center gap-3 text-sm font-medium">
@@ -727,9 +735,10 @@ export const UserDashboard = () => {
                         ) : (
                           <Loader2 className="w-4 h-4 text-cyan-500 animate-spin" />
                         )}
-                        <span className={sosState?.emailSent === true ? "text-emerald-100" : sosState?.emailSent === false ? "text-red-400" : "text-slate-300"}>
+                        <span className={`flex-1 ${sosState?.emailSent === true ? "text-emerald-100" : sosState?.emailSent === false ? "text-red-400" : "text-slate-300"}`}>
                           {sosState?.emailSent === false ? 'Email Service Failed' : 'Email Sent'}
                         </span>
+                        <span className="text-[10px] text-cyan-500 font-mono">{getElapsed(sosTimers?.emailEnd)}</span>
                       </div>
 
                       <div className="flex items-center gap-3 text-sm font-medium">
@@ -742,14 +751,32 @@ export const UserDashboard = () => {
                         ) : (
                           <Loader2 className="w-4 h-4 text-cyan-500 animate-spin" />
                         )}
-                        <span className={sosState?.smsSent === true ? "text-emerald-100" : sosState?.smsSent === false ? "text-red-400" : "text-slate-300"}>
+                        <span className={`flex-1 ${sosState?.smsSent === true ? "text-emerald-100" : sosState?.smsSent === false ? "text-red-400" : "text-slate-300"}`}>
                           {sosState?.smsSent === false ? 'SMS Service Failed' : 'SMS Sent'}
                         </span>
+                        <span className="text-[10px] text-cyan-500 font-mono">{getElapsed(sosTimers?.smsEnd)}</span>
                       </div>
                       
                       <div className="flex items-center gap-3 text-sm font-medium">
+                        {sosState?.whatsappSent === true ? (
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                        ) : sosState?.whatsappSent === false ? (
+                          <AlertCircle className="w-4 h-4 text-red-500" />
+                        ) : sosState?.whatsappSent === 'retrying' ? (
+                          <Loader2 className="w-4 h-4 text-amber-500 animate-spin" />
+                        ) : (
+                          <Loader2 className="w-4 h-4 text-cyan-500 animate-spin" />
+                        )}
+                        <span className={`flex-1 ${sosState?.whatsappSent === true ? "text-emerald-100" : sosState?.whatsappSent === false ? "text-red-400" : "text-slate-300"}`}>
+                          {sosState?.whatsappSent === false ? 'WhatsApp Failed' : 'WhatsApp Sent'}
+                        </span>
+                        <span className="text-[10px] text-cyan-500 font-mono">{getElapsed(sosTimers?.whatsappEnd)}</span>
+                      </div>
+                      
+                      <div className="flex items-center gap-3 text-sm font-medium border-t border-red-500/20 pt-2 mt-1">
                         <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                        <span className="text-emerald-100">Live Tracking Started</span>
+                        <span className="text-emerald-100 flex-1">Live Tracking Started</span>
+                        <span className="text-[10px] text-emerald-400 font-mono font-bold">ACTIVE</span>
                       </div>
                     </div>
 

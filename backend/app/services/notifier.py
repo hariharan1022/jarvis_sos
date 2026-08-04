@@ -166,10 +166,13 @@ class NotifierService:
             req.add_header("Authorization", f"Basic {auth_b64}")
             req.add_header("Content-Type", "application/x-www-form-urlencoded")
             
-            with urllib.request.urlopen(req, timeout=10) as response:
-                res_body = response.read().decode("utf-8")
-                res_json = json.loads(res_body)
-                logger.info(f"SMS successfully sent to {normalized_phone}. SID: {res_json.get('sid')}")
+            def do_sms_request():
+                with urllib.request.urlopen(req, timeout=10) as response:
+                    return response.read().decode("utf-8")
+                    
+            res_body = await asyncio.to_thread(do_sms_request)
+            res_json = json.loads(res_body)
+            logger.info(f"SMS successfully sent to {normalized_phone}. SID: {res_json.get('sid')}")
         except Exception as e:
             logger.error(f"Error executing SMS delivery to {normalized_phone}: {e}")
             raise
@@ -211,10 +214,13 @@ class NotifierService:
             req.add_header("Authorization", f"Basic {auth_b64}")
             req.add_header("Content-Type", "application/x-www-form-urlencoded")
             
-            with urllib.request.urlopen(req, timeout=10) as response:
-                res_body = response.read().decode("utf-8")
-                res_json = json.loads(res_body)
-                logger.info(f"WhatsApp successfully sent to {normalized_phone}. SID: {res_json.get('sid')}")
+            def do_wa_request():
+                with urllib.request.urlopen(req, timeout=10) as response:
+                    return response.read().decode("utf-8")
+                    
+            res_body = await asyncio.to_thread(do_wa_request)
+            res_json = json.loads(res_body)
+            logger.info(f"WhatsApp successfully sent to {normalized_phone}. SID: {res_json.get('sid')}")
         except Exception as e:
             logger.error(f"Error executing WhatsApp delivery to {normalized_phone}: {e}")
             raise
@@ -283,11 +289,14 @@ class NotifierService:
             data = json.dumps(payload).encode("utf-8")
             req = urllib.request.Request(url, data=data, headers=headers, method="POST")
             
-            with urllib.request.urlopen(req, timeout=10) as response:
-                res_body = response.read().decode("utf-8")
-                res_json = json.loads(res_body)
-                logger.info(f"Resend email dispatched successfully. ID: {res_json.get('id')}")
-                return True, ""
+            def do_resend():
+                with urllib.request.urlopen(req, timeout=10) as response:
+                    return response.read().decode("utf-8")
+                    
+            res_body = await asyncio.to_thread(do_resend)
+            res_json = json.loads(res_body)
+            logger.info(f"Resend email dispatched successfully. ID: {res_json.get('id')}")
+            return True, ""
         except Exception as e:
             logger.error(f"Resend API error dispatching email to {email}: {e}")
             return False, f"Resend API Error: {str(e)}"
@@ -332,10 +341,13 @@ class NotifierService:
             data = json.dumps(payload).encode("utf-8")
             req = urllib.request.Request(url, data=data, headers=headers, method="POST")
             
-            with urllib.request.urlopen(req, timeout=10) as response:
-                # SendGrid returns 202 Accepted on success
-                logger.info(f"SendGrid email dispatched successfully.")
-                return True, ""
+            def do_sendgrid():
+                with urllib.request.urlopen(req, timeout=10) as response:
+                    return response.read().decode("utf-8")
+                    
+            await asyncio.to_thread(do_sendgrid)
+            logger.info(f"SendGrid email dispatched successfully.")
+            return True, ""
         except Exception as e:
             logger.error(f"SendGrid API error dispatching email to {email}: {e}")
             return False, f"SendGrid API Error: {str(e)}"
@@ -380,13 +392,16 @@ class NotifierService:
             msg.attach(part1)
             msg.attach(part2)
 
-            server = smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT)
-            server.ehlo()
-            server.starttls()
-            server.ehlo()
-            server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-            server.send_message(msg)
-            server.quit()
+            def do_smtp():
+                server = smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT)
+                server.ehlo()
+                server.starttls()
+                server.ehlo()
+                server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+                server.send_message(msg)
+                server.quit()
+                
+            await asyncio.to_thread(do_smtp)
             logger.info(f"SMTP email successfully delivered to {email}")
             return True, ""
         except Exception as e:
@@ -505,6 +520,8 @@ class NotifierService:
 </body>
 </html>"""
 
+        tasks = []
+        
         for contact in contacts:
             dedup_key = (contact.email, tracking_code)
             if dedup_key in sent_cache:
@@ -517,38 +534,52 @@ class NotifierService:
             sent_cache[dedup_key] = now
 
             if contact.notify_sms:
-                try:
-                    await cls.send_sms(contact.phone, sms_body, contact.priority)
-                    await manager.broadcast_to_session(tracking_code, {
-                        "type": "notification_status", "channel": "sms", "status": "success", "recipient": contact.phone
-                    })
-                except Exception as e:
-                    logger.error(f"Failed to send SMS to {contact.phone}: {e}")
-                    await manager.broadcast_to_session(tracking_code, {
-                        "type": "notification_status", "channel": "sms", "status": "failed", "recipient": contact.phone, "error": str(e)
-                    })
+                async def _send_sms_task(c=contact):
+                    try:
+                        await cls.send_sms(c.phone, sms_body, c.priority)
+                        await manager.broadcast_to_session(tracking_code, {
+                            "type": "notification_status", "channel": "sms", "status": "success", "recipient": c.phone
+                        })
+                    except Exception as e:
+                        logger.error(f"Failed to send SMS to {c.phone}: {e}")
+                        await manager.broadcast_to_session(tracking_code, {
+                            "type": "notification_status", "channel": "sms", "status": "failed", "recipient": c.phone, "error": str(e)
+                        })
+                tasks.append(asyncio.create_task(_send_sms_task()))
+
             if contact.notify_whatsapp:
-                whatsapp_phone = contact.whatsapp if contact.whatsapp else contact.phone
-                try:
-                    await cls.send_whatsapp(whatsapp_phone, sms_body, contact.priority)
-                    await manager.broadcast_to_session(tracking_code, {
-                        "type": "notification_status", "channel": "whatsapp", "status": "success", "recipient": whatsapp_phone
-                    })
-                except Exception as e:
-                    logger.error(f"Failed to send WhatsApp to {whatsapp_phone}: {e}")
-                    await manager.broadcast_to_session(tracking_code, {
-                        "type": "notification_status", "channel": "whatsapp", "status": "failed", "recipient": whatsapp_phone, "error": str(e)
-                    })
+                async def _send_wa_task(c=contact):
+                    whatsapp_phone = c.whatsapp if c.whatsapp else c.phone
+                    try:
+                        await cls.send_whatsapp(whatsapp_phone, sms_body, c.priority)
+                        await manager.broadcast_to_session(tracking_code, {
+                            "type": "notification_status", "channel": "whatsapp", "status": "success", "recipient": whatsapp_phone
+                        })
+                    except Exception as e:
+                        logger.error(f"Failed to send WhatsApp to {whatsapp_phone}: {e}")
+                        await manager.broadcast_to_session(tracking_code, {
+                            "type": "notification_status", "channel": "whatsapp", "status": "failed", "recipient": whatsapp_phone, "error": str(e)
+                        })
+                tasks.append(asyncio.create_task(_send_wa_task()))
+
             if contact.notify_email:
-                try:
-                    await cls.send_email(contact.email, email_subject, email_plain, email_html, contact.priority, tracking_code)
-                except Exception as e:
-                    logger.error(f"Failed to send Email to {contact.email}: {e}")
-                    await manager.broadcast_to_session(tracking_code, {
-                        "type": "notification_status", "channel": "email", "status": "failed", "recipient": contact.email, "error": str(e)
-                    })
+                async def _send_email_task(c=contact):
+                    try:
+                        await cls.send_email(c.email, email_subject, email_plain, email_html, c.priority, tracking_code)
+                    except Exception as e:
+                        logger.error(f"Failed to send Email to {c.email}: {e}")
+                        await manager.broadcast_to_session(tracking_code, {
+                            "type": "notification_status", "channel": "email", "status": "failed", "recipient": c.email, "error": str(e)
+                        })
+                tasks.append(asyncio.create_task(_send_email_task()))
+
             if contact.notify_call:
-                try:
-                    await cls.send_voice_call(contact.phone, f"Emergency alert. Your contact {user_name} is in danger. We have sent you a text with their live location.", contact.priority)
-                except Exception as e:
-                    logger.error(f"Failed to make voice call to {contact.phone}: {e}")
+                async def _send_call_task(c=contact):
+                    try:
+                        await cls.send_voice_call(c.phone, f"Emergency alert. Your contact {user_name} is in danger. We have sent you a text with their live location.", c.priority)
+                    except Exception as e:
+                        logger.error(f"Failed to make voice call to {c.phone}: {e}")
+                tasks.append(asyncio.create_task(_send_call_task()))
+                
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
