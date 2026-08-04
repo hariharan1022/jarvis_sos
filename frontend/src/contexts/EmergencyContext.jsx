@@ -16,14 +16,19 @@ export const EmergencyProvider = ({ children }) => {
   const [micPermissionError, setMicPermissionError] = useState(null);
   const [voiceGuardianEnabled, setVoiceGuardianEnabled] = useState(true);
 
-  // ─── SOS Workflow State ────────────────────────────────────────────────────
+  // ─── SOS Workflow State ───────────────────────────────────────────────────
   const [sosState, setSosState] = useState({
     locationAcquired: false,
     backendTriggered: false,
     errorMsg: null,
     gpsError: null,
     emailSent: null,
-    emailError: null
+    whatsappSent: null,
+    callSent: null,
+    smsError: null,
+    smsError: null,
+    emailError: null,
+    whatsappError: null
   });
 
   const [sosTimers, setSosTimers] = useState({
@@ -61,8 +66,7 @@ export const EmergencyProvider = ({ children }) => {
     } else {
       setBrowserSupport('Unsupported');
     }
-    
-    // Detect Chrome/Edge
+
     const ua = navigator.userAgent;
     if (ua.includes('Edg/')) {
       setBrowserInfo('Edge');
@@ -78,12 +82,10 @@ export const EmergencyProvider = ({ children }) => {
   }, []);
 
   // ─── CRITICAL: Use refs for values accessed inside recognition callbacks ───
-  // These refs are the fix for the stale-closure bug — recognition event
-  // handlers capture refs (always current) instead of stale state variables.
   const recognitionRef = useRef(null);
-  const enabledRef = useRef(true);        // mirrors voiceGuardianEnabled
-  const isEmergencyRef = useRef(false);   // mirrors isEmergency
-  const userRef = useRef(null);           // mirrors user
+  const enabledRef = useRef(true);
+  const isEmergencyRef = useRef(false);
+  const userRef = useRef(null);
   const restartTimerRef = useRef(null);
   const isRestartingRef = useRef(false);
 
@@ -103,12 +105,13 @@ export const EmergencyProvider = ({ children }) => {
       stopSpeechRecognition();
       if (locationIntervalRef.current) clearInterval(locationIntervalRef.current);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, voiceGuardianEnabled]);
 
   // ─── TTS Helper ─────────────────────────────────────────────────────────
   const speakFeedback = useCallback((text) => {
     if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel(); // clear previous
+      window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.rate = 1.0;
       utterance.pitch = 1.0;
@@ -124,28 +127,28 @@ export const EmergencyProvider = ({ children }) => {
       startEvidenceRecording();
       captureCameraSnapshot('image_front');
       setTimeout(() => captureCameraSnapshot('image_rear'), 2000);
-      
+
       // Connect WebSocket to track notification delivery status
       const wsUrl = API_URL.replace('http', 'ws');
       const ws = new WebSocket(`${wsUrl}/ws/track/${activeSession.tracking_code}`);
-      
+
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
           if (data.type === 'notification_status') {
-              const statusVal = data.status === 'success' ? true : data.status === 'retrying' ? 'retrying' : false;
-              
-              if (data.status === 'success') {
-                setSosTimers(prev => ({ ...prev, [`${data.channel}End`]: performance.now() }));
-              }
+            const statusVal = data.status === 'success' ? true : data.status === 'retrying' ? 'retrying' : false;
 
-              setSosState(prev => {
-              const next = { 
-                ...prev, 
+            if (data.status === 'success') {
+              setSosTimers(prev => ({ ...prev, [`${data.channel}End`]: performance.now() }));
+            }
+
+            setSosState(prev => {
+              const next = {
+                ...prev,
                 [`${data.channel}Sent`]: statusVal,
                 [`${data.channel}Error`]: data.status === 'failed' ? data.error : null
               };
-              
+
               // Trigger TTS for failures
               if (data.status === 'failed') {
                 const errStr = data.error ? data.error : 'Unknown error';
@@ -153,23 +156,27 @@ export const EmergencyProvider = ({ children }) => {
               } else if (data.status === 'retrying') {
                 speakFeedback(`${data.channel} delivery failed. Retrying.`);
               }
-              
+
               // Check if all requested channels have successfully sent
-              const allSuccess = next.emailSent === null || next.emailSent === true;
+              const allSuccess = ['smsSent', 'emailSent', 'whatsappSent', 'callSent'].every(
+                key => next[key] === null || next[key] === true
+              );
               
-              const hasTrue = next.emailSent === true;
-              const hasPending = next.emailSent === 'retrying' || next.emailSent === false;
+              const hasTrue = ['smsSent', 'emailSent', 'whatsappSent', 'callSent'].some(key => next[key] === true);
+              const hasPending = ['smsSent', 'emailSent', 'whatsappSent', 'callSent'].some(key => next[key] === 'retrying' || next[key] === false);
               
               if (hasTrue && !hasPending && allSuccess) {
-                const prevAllSuccess = prev.emailSent === null || prev.emailSent === true;
-                const prevHasTrue = prev.emailSent === true;
-                const prevHasPending = prev.emailSent === 'retrying' || prev.emailSent === false;
+                const prevAllSuccess = ['smsSent', 'emailSent', 'whatsappSent', 'callSent'].every(
+                  key => prev[key] === null || prev[key] === true
+                );
+                const prevHasTrue = ['smsSent', 'emailSent', 'whatsappSent', 'callSent'].some(key => prev[key] === true);
+                const prevHasPending = ['smsSent', 'emailSent', 'whatsappSent', 'callSent'].some(key => prev[key] === 'retrying' || prev[key] === false);
 
                 if (!(prevHasTrue && !prevHasPending && prevAllSuccess)) {
                   speakFeedback("Emergency alert has been sent successfully. Your trusted contacts have been notified by email. Your live location is now being shared. Stay calm, help is on the way.");
                 }
               }
-              
+
               return next;
             });
           }
@@ -188,13 +195,14 @@ export const EmergencyProvider = ({ children }) => {
         wsRef.current = null;
       }
     }
-    
+
     return () => {
       if (wsRef.current) {
         wsRef.current.close();
         wsRef.current = null;
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEmergency, activeSession, API_URL, speakFeedback]);
 
   // ─── Text normalization ───────────────────────────────────────────────────
@@ -210,7 +218,6 @@ export const EmergencyProvider = ({ children }) => {
     const n = normalizeText(transcript);
     console.log(`[Voice Guardian] Checking transcript: "${n}"`);
 
-    // Primary exact-include targets (ordered from most specific to least)
     const targets = [
       'nova help me',
       'hey nova',
@@ -231,18 +238,17 @@ export const EmergencyProvider = ({ children }) => {
       }
     }
 
-    // Phonetic / misrecognition patterns
     const phonetics = [
       { target: 'nova help me', pattern: /no[vb][ao]\s+help\s+me/i },
       { target: 'nova help me', pattern: /no[vb]a\s+help/i },
-      { target: 'hey nova',     pattern: /hey\s+no[vb][ao]/i },
-      { target: 'nova',         pattern: /no[vb][ao]/i },
-      { target: 'emergency',    pattern: /emergen/i },
-      { target: 'sos',          pattern: /\bs\s*[.\-]?\s*o\s*[.\-]?\s*s\b/i },
-      { target: 'save me',      pattern: /saf[e]?\s+me/i },
+      { target: 'hey nova', pattern: /hey\s+no[vb][ao]/i },
+      { target: 'nova', pattern: /no[vb][ao]/i },
+      { target: 'emergency', pattern: /emergen/i },
+      { target: 'sos', pattern: /\bs\s*[.\-]?\s*o\s*[.\-]?\s*s\b/i },
+      { target: 'save me', pattern: /saf[e]?\s+me/i },
       { target: 'i am in danger', pattern: /danger/i },
-      { target: 'help me',      pattern: /\bhelp\s+m[ea]\b/i },
-      { target: 'help',         pattern: /\bhelp\b/i },
+      { target: 'help me', pattern: /\bhelp\s+m[ea]\b/i },
+      { target: 'help', pattern: /\bhelp\b/i },
     ];
 
     for (const { target, pattern } of phonetics) {
@@ -299,14 +305,30 @@ export const EmergencyProvider = ({ children }) => {
         err.name === 'NotAllowedError'
           ? 'Microphone blocked by browser. Click the lock icon in the address bar → Allow microphone.'
           : err.name === 'NotFoundError'
-          ? 'No microphone detected on this device.'
-          : `Microphone error: ${err.message}`;
+            ? 'No microphone detected on this device.'
+            : `Microphone error: ${err.message}`;
       setMicPermissionError(msg);
       setSpeechStatus('permission_denied');
     }
   };
 
-  // ─── Core recognition start — uses refs to avoid stale closures ──────────
+  // ─── Debounced restart helper ────────────────────────────────────────────
+  const scheduleRestart = () => {
+    if (isRestartingRef.current) return;
+    if (!enabledRef.current || isEmergencyRef.current) return;
+    isRestartingRef.current = true;
+    console.log('[Voice Guardian] ⏱ Scheduling restart in 1s...');
+    restartTimerRef.current = setTimeout(() => {
+      if (enabledRef.current && !isEmergencyRef.current) {
+        console.log('[Voice Guardian] 🔁 Restarting recognition now.');
+        startSpeechRecognition();
+      } else {
+        isRestartingRef.current = false;
+      }
+    }, 1000);
+  };
+
+  // ─── Core recognition start ──────────────────────────────────────────────
   const startSpeechRecognition = () => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
@@ -324,7 +346,7 @@ export const EmergencyProvider = ({ children }) => {
 
     // Tear down old session cleanly
     if (recognitionRef.current) {
-      try { recognitionRef.current.abort(); } catch (_) {}
+      try { recognitionRef.current.abort(); } catch (_) { }
       recognitionRef.current = null;
     }
 
@@ -354,7 +376,7 @@ export const EmergencyProvider = ({ children }) => {
             setMicPermissionGranted(false);
             setMicPermissionError('Microphone access blocked. Allow it in the browser address bar (🔒 icon).');
             setSpeechStatus('permission_denied');
-            return; // no restart
+            return;
           case 'no-speech':
             addDebugLog('No speech detected — will auto-restart');
             console.log('[Voice Guardian] No speech detected — will auto-restart.');
@@ -378,12 +400,10 @@ export const EmergencyProvider = ({ children }) => {
             console.warn(`[Voice Guardian] Unknown error: ${event.error}`);
             setSpeechStatus('error');
         }
-        // Schedule restart for recoverable errors
         scheduleRestart();
       };
 
       // ── onend ─────────────────────────────────────────────────────────
-      // KEY FIX: uses refs (not stale state) to decide whether to restart
       recognition.onend = () => {
         addDebugLog('🔄 Recognition stream ended');
         console.log('[Voice Guardian] 🔄 Recognition stream ended.');
@@ -396,6 +416,10 @@ export const EmergencyProvider = ({ children }) => {
       };
 
       // ── onresult ───────────────────────────────────────────────────────
+      // Short/generic words require higher confidence to avoid false positives
+      const HIGH_CONFIDENCE_REQUIRED = ['help', 'sos', 'nova'];
+      const CONFIDENCE_THRESHOLD = 0.60;
+
       recognition.onresult = (event) => {
         let bestConfidence = 0;
         let hasMatch = false;
@@ -405,23 +429,22 @@ export const EmergencyProvider = ({ children }) => {
         for (let i = 0; i < event.results.length; i++) {
           const result = event.results[i];
           fullTranscript += result[0].transcript + ' ';
-          
+
           if (result.isFinal && i >= event.resultIndex) {
             finalChunk += result[0].transcript;
           }
-          
+
           if (i === event.results.length - 1) {
-             bestConfidence = result[0].confidence || 0;
+            bestConfidence = result[0].confidence || 0;
           }
         }
-        
+
         fullTranscript = fullTranscript.trim();
-        
+
         if (finalChunk) {
-          setFinalTranscript(prev => (prev + ' ' + finalChunk.trim()).trim().slice(-100)); // keep last 100 chars
+          setFinalTranscript(prev => (prev + ' ' + finalChunk.trim()).trim().slice(-100));
         }
 
-        // Update live transcript display
         if (fullTranscript) {
           setLiveTranscript(fullTranscript.slice(-100));
           setRecognitionConfidence(bestConfidence);
@@ -431,21 +454,22 @@ export const EmergencyProvider = ({ children }) => {
           const customWakeWord = userRef.current?.custom_wake_word || '';
           const matched = checkFuzzyMatch(fullTranscript, customWakeWord);
           if (matched) {
-            hasMatch = true;
-            addDebugLog(`🚨 WAKE PHRASE DETECTED: "${matched}" — triggering SOS!`);
-            console.log(`[Voice Guardian] 🚨 WAKE PHRASE DETECTED: "${matched}" — triggering SOS!`);
-            setWakePhraseMatch(matched);
-            setLastWakePhrase(matched);
-            setSpeechStatus('matched');
-            setRecognitionConfidence(bestConfidence > 0 ? bestConfidence : 0.99);
-            playConfirmationChirp();
-            triggerEmergency('voice_activation', matched);
-            // Resume listening after match
-            setTimeout(() => {
-              if (enabledRef.current && !isEmergencyRef.current) {
-                setSpeechStatus('listening');
-              }
-            }, 3000);
+            const needsHighConf = HIGH_CONFIDENCE_REQUIRED.includes(matched);
+            const confOk = !needsHighConf || bestConfidence === 0 || bestConfidence >= CONFIDENCE_THRESHOLD;
+            if (!confOk) {
+              addDebugLog(`⚠️ Low-confidence match "${matched}" (${(bestConfidence * 100).toFixed(0)}%) — skipped.`);
+              console.log(`[Voice Guardian] ⚠️ Low-conf match "${matched}" (${bestConfidence.toFixed(2)}) < ${CONFIDENCE_THRESHOLD} — skipped.`);
+            } else {
+              hasMatch = true;
+              addDebugLog(`🚨 WAKE PHRASE DETECTED: "${matched}" conf:${(bestConfidence * 100).toFixed(0)}% — triggering SOS!`);
+              console.log(`[Voice Guardian] 🚨 WAKE PHRASE DETECTED: "${matched}" — triggering SOS!`);
+              setWakePhraseMatch(matched);
+              setLastWakePhrase(matched);
+              setSpeechStatus('matched');
+              playConfirmationChirp();
+              speakFeedback(`${matched} detected. Activating emergency protocol now.`);
+              triggerEmergency('voice_activation', matched);
+            }
           }
         }
       };
@@ -472,22 +496,6 @@ export const EmergencyProvider = ({ children }) => {
     }
   };
 
-  // ─── Debounced restart helper ────────────────────────────────────────────
-  const scheduleRestart = () => {
-    if (isRestartingRef.current) return;
-    if (!enabledRef.current || isEmergencyRef.current) return;
-    isRestartingRef.current = true;
-    console.log('[Voice Guardian] ⏱ Scheduling restart in 1s...');
-    restartTimerRef.current = setTimeout(() => {
-      if (enabledRef.current && !isEmergencyRef.current) {
-        console.log('[Voice Guardian] 🔁 Restarting recognition now.');
-        startSpeechRecognition();
-      } else {
-        isRestartingRef.current = false;
-      }
-    }, 1000);
-  };
-
   // ─── Stop ────────────────────────────────────────────────────────────────
   const stopSpeechRecognition = () => {
     if (restartTimerRef.current) {
@@ -496,7 +504,7 @@ export const EmergencyProvider = ({ children }) => {
     }
     isRestartingRef.current = false;
     if (recognitionRef.current) {
-      try { recognitionRef.current.abort(); } catch (_) {}
+      try { recognitionRef.current.abort(); } catch (_) { }
       recognitionRef.current = null;
     }
     setSpeechStatus('offline');
@@ -518,14 +526,14 @@ export const EmergencyProvider = ({ children }) => {
     lastTriggerTimeRef.current = now;
     console.log(`[Emergency] 🚨 Triggering emergency — type: "${type}", phrase: "${wakeWord}"`);
 
-    // Reset SOS Tracking State
     setSosState({
       locationAcquired: false,
       backendTriggered: false,
       errorMsg: null,
       gpsError: null,
       emailSent: null,
-      emailError: null
+      whatsappSent: null,
+      callSent: null
     });
 
     setSosTimers({
@@ -540,17 +548,16 @@ export const EmergencyProvider = ({ children }) => {
     try {
       const bat = await navigator.getBattery();
       batteryLevel = Math.round(bat.level * 100);
-    } catch (_) {}
+    } catch (_) { }
 
     navigator.geolocation.getCurrentPosition(
       async ({ coords: { latitude, longitude } }) => {
         console.log(`[Emergency] GPS acquired: ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`);
-        
-        const now = performance.now();
-        setSosTimers(prev => ({ ...prev, gpsEnd: now, apiStart: now }));
 
+        const t = performance.now();
+        setSosTimers(prev => ({ ...prev, gpsEnd: t, apiStart: t }));
         setSosState(prev => ({ ...prev, locationAcquired: true, gpsError: null }));
-        
+
         let geocodedAddress = `Lat ${latitude.toFixed(4)}, Lng ${longitude.toFixed(4)}`;
         try {
           const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
@@ -562,22 +569,22 @@ export const EmergencyProvider = ({ children }) => {
             }
           }
         } catch (e) {
-          console.warn("Reverse geocoding failed:", e);
+          console.warn('Reverse geocoding failed:', e);
         }
 
         await _sendTriggerRequest(latitude, longitude, batteryLevel, type, wakeWord, geocodedAddress);
       },
       (err) => {
-        let errorText = "Unable to obtain GPS";
-        if (err.code === 1) errorText = "Location permission denied";
-        if (err.code === 2) errorText = "Location position unavailable";
-        if (err.code === 3) errorText = "Location request timeout";
+        let errorText = 'Unable to obtain GPS';
+        if (err.code === 1) errorText = 'Location permission denied';
+        if (err.code === 2) errorText = 'Location position unavailable';
+        if (err.code === 3) errorText = 'Location request timeout';
 
         console.warn(`[Emergency] GPS unavailable (${errorText}), using fallback coords:`, err.message);
         setSosState(prev => ({ ...prev, locationAcquired: false, gpsError: errorText }));
         speakFeedback(`I couldn't get your exact location due to ${errorText}. Retrying with approximate coordinates.`);
-        
-        _sendTriggerRequest(12.9716, 77.5946, batteryLevel, type, wakeWord, "Unknown Location (Fallback)");
+
+        _sendTriggerRequest(12.9716, 77.5946, batteryLevel, type, wakeWord, 'Unknown Location (Fallback)');
       },
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     );
@@ -602,9 +609,7 @@ export const EmergencyProvider = ({ children }) => {
       });
       if (res.ok) {
         const session = await res.json();
-        
         setSosTimers(prev => ({ ...prev, apiEnd: performance.now() }));
-
         addDebugLog(`✅ Backend SOS Acknowledged. ID: ${session.tracking_code}`);
         console.log('[Emergency] ✅ Backend acknowledged SOS. Session:', session.tracking_code);
         setActiveSession(session);
@@ -624,16 +629,13 @@ export const EmergencyProvider = ({ children }) => {
     }
   };
 
-  const fallbackTrigger = (lat, lng, type, battery) =>
-    _sendTriggerRequest(lat, lng, battery, type, '');
-
   // ─── Location streaming ───────────────────────────────────────────────────
   const streamCurrentLocation = () => {
     if (!token) return;
     navigator.geolocation.getCurrentPosition(
       async ({ coords: { latitude, longitude, speed, heading, accuracy } }) => {
         let battery = 100;
-        try { const b = await navigator.getBattery(); battery = Math.round(b.level * 100); } catch (_) {}
+        try { const b = await navigator.getBattery(); battery = Math.round(b.level * 100); } catch (_) { }
         const fd = new FormData();
         fd.append('latitude', latitude);
         fd.append('longitude', longitude);
@@ -684,7 +686,7 @@ export const EmergencyProvider = ({ children }) => {
       audioChunksRef.current = [];
       recorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
       recorder.onstop = async () => {
-        uploadEvidenceBlob(new Blob(audioChunksRef.current, { type: 'audio/webm' }), 'audio');
+        uploadEvidenceBlob(new Blob(audioChunksRef.current, { type: 'audio/webm' }), 'audio', 'audio.webm');
         stream.getTracks().forEach((t) => t.stop());
       };
       recorder.start();
@@ -694,18 +696,68 @@ export const EmergencyProvider = ({ children }) => {
 
   const stopEvidenceRecording = () => {
     if (audioRecorderRef.current?.state === 'recording') {
-      try { audioRecorderRef.current.stop(); } catch (_) {}
+      try { audioRecorderRef.current.stop(); } catch (_) { }
     }
   };
 
-  const captureCameraSnapshot = (type = 'image_front') =>
-    createMockEvidenceUpload(type);
+  // ─── Real camera snapshot (with canvas fallback) ──────────────────────────
+  const captureCameraSnapshot = async (type = 'image_front') => {
+    const facingMode = type === 'image_rear' ? 'environment' : 'user';
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode, width: { ideal: 1280 }, height: { ideal: 720 } }
+      });
+      const track = stream.getVideoTracks()[0];
+      let blob;
 
-  const uploadEvidenceBlob = async (blob, type) => {
+      if (typeof ImageCapture !== 'undefined') {
+        const imageCapture = new ImageCapture(track);
+        const rawBlob = await imageCapture.takePhoto();
+        blob = rawBlob instanceof Blob ? rawBlob : null;
+        if (!blob) {
+          // Rare case: takePhoto returned ImageBitmap; render it to canvas
+          const bitmap = await createImageBitmap(rawBlob);
+          const canvas = document.createElement('canvas');
+          canvas.width = bitmap.width;
+          canvas.height = bitmap.height;
+          canvas.getContext('2d').drawImage(bitmap, 0, 0);
+          blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.85));
+        }
+      } else {
+        // Safari / Firefox: draw first available video frame onto canvas
+        const video = document.createElement('video');
+        video.srcObject = stream;
+        video.muted = true;
+        await new Promise(res => { video.onloadedmetadata = res; });
+        await video.play();
+        // Wait one frame for data
+        await new Promise(res => requestAnimationFrame(res));
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth || 640;
+        canvas.height = video.videoHeight || 480;
+        canvas.getContext('2d').drawImage(video, 0, 0);
+        blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.85));
+        video.pause();
+      }
+
+      stream.getTracks().forEach(t => t.stop());
+
+      if (blob) {
+        console.log(`[Evidence] 📸 Real snapshot captured (${type}), size: ${blob.size} bytes`);
+        uploadEvidenceBlob(blob, type, `${type}.jpg`);
+      }
+    } catch (e) {
+      console.warn(`[Evidence] Camera capture failed for ${type}:`, e.message, '— using stub');
+      const stub = new Blob([`[CAMERA_UNAVAILABLE] ${type} @ ${new Date().toISOString()}`], { type: 'text/plain' });
+      uploadEvidenceBlob(stub, type, `${type}_stub.txt`);
+    }
+  };
+
+  const uploadEvidenceBlob = async (blob, type, filename) => {
     if (!token) return;
     const fd = new FormData();
     fd.append('type', type);
-    fd.append('file', blob, `${type}.bin`);
+    fd.append('file', blob, filename || `${type}.bin`);
     try {
       await fetch(`${API_URL}/emergency/upload-evidence`, {
         method: 'POST',
@@ -713,11 +765,6 @@ export const EmergencyProvider = ({ children }) => {
         body: fd,
       });
     } catch (e) { console.error('[Evidence] Upload error:', e); }
-  };
-
-  const createMockEvidenceUpload = (type) => {
-    const blob = new Blob([`Mock capture: ${type} @ ${new Date().toISOString()}`], { type: 'text/plain' });
-    uploadEvidenceBlob(blob, type);
   };
 
   return (
