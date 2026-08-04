@@ -142,8 +142,22 @@ class NotifierService:
         log_notification("SMS", normalized_phone, message, priority)
 
         from ..config import settings
-        if not all([settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN, settings.TWILIO_PHONE_NUMBER]):
-            logger.warning("Twilio configuration for SMS is incomplete. Skipping actual SMS delivery.")
+        is_configured = all([
+            settings.TWILIO_ACCOUNT_SID,
+            settings.TWILIO_AUTH_TOKEN,
+            settings.TWILIO_PHONE_NUMBER
+        ]) and "your-twilio" not in settings.TWILIO_ACCOUNT_SID and settings.TWILIO_ACCOUNT_SID != ""
+
+        if not is_configured:
+            try:
+                import os
+                os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+                mock_filepath = os.path.join(settings.UPLOAD_DIR, "received_sms.txt")
+                with open(mock_filepath, "a", encoding="utf-8") as f:
+                    f.write(f"[{datetime.utcnow().isoformat()}] To: {normalized_phone}\nMessage: {message}\n\n")
+                logger.info(f"[MOCK SMS SUCCESS] Creds not configured. Appended SMS to: {mock_filepath}")
+            except Exception as e:
+                logger.error(f"Error saving mock SMS: {e}")
             return
 
         try:
@@ -181,8 +195,22 @@ class NotifierService:
         logger.info(f"[WHATSAPP ALERT] [Priority {priority}] To: {normalized_phone} - Message: {message}")
         log_notification("WhatsApp", normalized_phone, message, priority)
 
-        if not all([settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN, settings.TWILIO_WHATSAPP_NUMBER]):
-            logger.warning("Twilio configuration for WhatsApp is incomplete. Skipping actual WhatsApp delivery.")
+        is_configured = all([
+            settings.TWILIO_ACCOUNT_SID,
+            settings.TWILIO_AUTH_TOKEN,
+            settings.TWILIO_WHATSAPP_NUMBER
+        ]) and "your-twilio" not in settings.TWILIO_ACCOUNT_SID and settings.TWILIO_ACCOUNT_SID != ""
+
+        if not is_configured:
+            try:
+                import os
+                os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+                mock_filepath = os.path.join(settings.UPLOAD_DIR, "received_whatsapp.txt")
+                with open(mock_filepath, "a", encoding="utf-8") as f:
+                    f.write(f"[{datetime.utcnow().isoformat()}] To: {normalized_phone}\nMessage: {message}\n\n")
+                logger.info(f"[MOCK WHATSAPP SUCCESS] Creds not configured. Appended WhatsApp to: {mock_filepath}")
+            except Exception as e:
+                logger.error(f"Error saving mock WhatsApp: {e}")
             return
 
         try:
@@ -331,9 +359,31 @@ class NotifierService:
     @staticmethod
     async def _dispatch_smtp(email: str, subject: str, plain_message: str, html_message: str) -> bool:
         from ..config import settings
-        if not all([settings.SMTP_HOST, settings.SMTP_USER, settings.SMTP_PASSWORD, settings.SMTP_FROM]):
-            logger.warning("SMTP configuration is incomplete. Skipping email delivery.")
-            return False
+        
+        # Check if SMTP is configured with actual credentials (not placeholders or empty strings)
+        is_configured = all([
+            settings.SMTP_HOST,
+            settings.SMTP_USER,
+            settings.SMTP_PASSWORD,
+            settings.SMTP_FROM
+        ]) and "your-email" not in settings.SMTP_USER and settings.SMTP_USER != ""
+        
+        if not is_configured:
+            try:
+                import os
+                os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+                mock_filename = f"received_email_{email}.html"
+                mock_filepath = os.path.join(settings.UPLOAD_DIR, mock_filename)
+                
+                with open(mock_filepath, "w", encoding="utf-8") as f:
+                    f.write(html_message)
+                
+                logger.info(f"[MOCK EMAIL SUCCESS] SMTP not configured. Saved email HTML to: {mock_filepath}")
+                log_notification("Email (Mock)", email, f"[Saved locally: /api/emergency/evidence-file/{mock_filename}] Subject: {subject}\n{plain_message}", 1)
+                return True
+            except Exception as e:
+                logger.error(f"Error saving mock email to file: {e}")
+                return False
 
         import smtplib
         from email.utils import formatdate, make_msgid

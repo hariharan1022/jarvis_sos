@@ -1,0 +1,32 @@
+1. Registering user test_sos_1785816934@example.com...
+Status: 200
+
+2. Logging in...
+Status: 200
+
+3. Adding emergency contact...
+Status: 200, Body: {'name': 'Primary Guardian', 'phone': '+15550199', 'email': 'guardian@example.com', 'whatsapp': '+15550199', 'notify_sms': True, 'notify_whatsapp': True, 'notify_email': True, 'notify_call': True, 'priority': 1, 'id': 5, 'user_id': 7, 'created_at': '2026-08-04T04:15:35.255466'}
+
+4. Triggering SOS panic...
+Status: 200, Body: {'id': 8, 'user_id': 7, 'active': True, 'start_time': '2026-08-04T04:15:35.278681', 'end_time': None, 'tracking_code': 'BAFA1420', 'emergency_type': 'manual', 'last_lat': 12.9716, 'last_lng': 77.5946, 'last_address': '123 Test Street, Bangalore', 'battery': 90, 'signal_status': 'Excellent', 'location_logs': [{'latitude': 12.9716, 'longitude': 77.5946, 'speed': 0.0, 'direction': 0.0, 'battery': 90, 'accuracy': 10.0, 'id': 164, 'session_id': 8, 'timestamp': '2026-08-04T04:15:35.285859'}], 'evidence_items': []}
+
+Waiting 2 seconds for worker thread to process...
+
+5. Checking notification logs...
+Status: 200
+[SMS] to +15550199: ALERT: SOS Tester User is in danger! Emergency Type: manual. Location: 123 Test Street, Bangalore. Battery: 90%. Live track: http://localhost:5173/gua
+[WhatsApp] to +15550199: ALERT: SOS Tester User is in danger! Emergency Type: manual. Location: 123 Test Street, Bangalore. Battery: 90%. Live track: http://localhost:5173/gua
+[Voice Call] to +15550199: Emergency alert. Your contact SOS Tester User is in danger. We have sent you a text with their live location.
+[Email] to guardian@example.com: Subject: Emergency Alert from SOS Tester User - Please Check Immediately
+Hi,
+
+I have triggered an emergency alert. Please check on me as soon as possi
+[Email (Mock)] to guardian@example.com: [Saved locally: /api/emergency/evidence-file/received_email_guardian@example.com.html] Subject: Emergency Alert from SOS Tester User - Please Check Im
+[SMS] to +15550199: ALERT: SOS Tester User is in danger! Emergency Type: manual. Location: 123 Test Street, Bangalore. Battery: 90%. Live track: http://localhost:5173/gua
+[WhatsApp] to +15550199: ALERT: SOS Tester User is in danger! Emergency Type: manual. Location: 123 Test Street, Bangalore. Battery: 90%. Live track: http://localhost:5173/gua
+[Voice Call] to +15550199: Emergency alert. Your contact SOS Tester User is in danger. We have sent you a text with their live location.
+[Email] to guardian@example.com: Subject: Emergency Alert from SOS Tester User - Please Check Immediately
+Hi,
+
+I have triggered an emergency alert. Please check on me as soon as possi
+[Email (Mock)] to guardian@example.com: [Saved locally: /api/emergency/evidence-file/received_email_guardian@example.com.html] Subject: Emergency Alert from SOS Tester User - Please Check Im
