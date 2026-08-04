@@ -36,3 +36,11 @@ venv/
 env/
 ENV/
 backend/.venv/
+
+# Sandbox email inbox (local dev only)
+backend/mock_emails/
+mock_emails/
+
+# Logs
+*.log
+logs/
