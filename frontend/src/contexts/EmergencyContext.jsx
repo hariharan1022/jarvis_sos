@@ -19,11 +19,31 @@ export const EmergencyProvider = ({ children }) => {
   // ─── SOS Workflow State ────────────────────────────────────────────────────
   const [sosState, setSosState] = useState({
     locationAcquired: false,
+    backendTriggered: false,
+    errorMsg: null,
+    gpsError: null,
     smsSent: null,
     emailSent: null,
     whatsappSent: null,
-    callSent: null
+    callSent: null,
+    smsError: null,
+    smsError: null,
+    emailError: null,
+    whatsappError: null
   });
+
+  const [sosTimers, setSosTimers] = useState({
+    gpsStart: null,
+    gpsEnd: null,
+    apiStart: null,
+    apiEnd: null,
+    smsEnd: null,
+    emailEnd: null,
+    whatsappEnd: null,
+    callEnd: null
+  });
+
+  const [currentAddress, setCurrentAddress] = useState('Unknown Location');
 
   const locationIntervalRef = useRef(null);
   const audioRecorderRef = useRef(null);
@@ -122,13 +142,23 @@ export const EmergencyProvider = ({ children }) => {
         try {
           const data = JSON.parse(event.data);
           if (data.type === 'notification_status') {
-            const statusVal = data.status === 'success' ? true : data.status === 'retrying' ? 'retrying' : false;
-            setSosState(prev => {
-              const next = { ...prev, [`${data.channel}Sent`]: statusVal };
+              const statusVal = data.status === 'success' ? true : data.status === 'retrying' ? 'retrying' : false;
+              
+              if (data.status === 'success') {
+                setSosTimers(prev => ({ ...prev, [`${data.channel}End`]: performance.now() }));
+              }
+
+              setSosState(prev => {
+              const next = { 
+                ...prev, 
+                [`${data.channel}Sent`]: statusVal,
+                [`${data.channel}Error`]: data.status === 'failed' ? data.error : null
+              };
               
               // Trigger TTS for failures
               if (data.status === 'failed') {
-                speakFeedback(`${data.channel} delivery failed.`);
+                const errStr = data.error ? data.error : 'Unknown error';
+                speakFeedback(`${data.channel} delivery failed. Reason: ${errStr}`);
               } else if (data.status === 'retrying') {
                 speakFeedback(`${data.channel} delivery failed. Retrying.`);
               }
@@ -138,20 +168,18 @@ export const EmergencyProvider = ({ children }) => {
                 key => next[key] === null || next[key] === true
               );
               
-              // We only want to say success ONCE when they transition to all success.
-              // This is a bit tricky to track cleanly here without a ref, 
-              // but we will do it if there's at least one true and no false/retrying
               const hasTrue = ['smsSent', 'emailSent', 'whatsappSent', 'callSent'].some(key => next[key] === true);
               const hasPending = ['smsSent', 'emailSent', 'whatsappSent', 'callSent'].some(key => next[key] === 'retrying' || next[key] === false);
               
-              if (hasTrue && !hasPending) {
-                // To avoid repeating, we can check if the previous state wasn't all success
+              if (hasTrue && !hasPending && allSuccess) {
                 const prevAllSuccess = ['smsSent', 'emailSent', 'whatsappSent', 'callSent'].every(
                   key => prev[key] === null || prev[key] === true
                 );
                 const prevHasTrue = ['smsSent', 'emailSent', 'whatsappSent', 'callSent'].some(key => prev[key] === true);
-                if (!(prevAllSuccess && prevHasTrue)) {
-                  speakFeedback("Emergency alert has been sent successfully. Your trusted contacts have been notified. Your live location is being shared. Stay calm, help is on the way.");
+                const prevHasPending = ['smsSent', 'emailSent', 'whatsappSent', 'callSent'].some(key => prev[key] === 'retrying' || prev[key] === false);
+
+                if (!(prevHasTrue && !prevHasPending && prevAllSuccess)) {
+                  speakFeedback("Emergency alert has been sent successfully. Your live location is being shared. Your trusted contacts have been notified. Stay calm. Help is on the way.");
                 }
               }
               
@@ -382,66 +410,56 @@ export const EmergencyProvider = ({ children }) => {
 
       // ── onresult ───────────────────────────────────────────────────────
       recognition.onresult = (event) => {
-        let bestTranscript = '';
         let bestConfidence = 0;
         let hasMatch = false;
         let finalChunk = '';
+        let fullTranscript = '';
 
-        // Iterate all new results since last resultIndex
-        for (let i = event.resultIndex; i < event.results.length; i++) {
+        for (let i = 0; i < event.results.length; i++) {
           const result = event.results[i];
+          fullTranscript += result[0].transcript + ' ';
           
-          if (result.isFinal) {
+          if (result.isFinal && i >= event.resultIndex) {
             finalChunk += result[0].transcript;
           }
-
-          // Check all alternatives (maxAlternatives=5)
-          for (let alt = 0; alt < result.length; alt++) {
-            const text = result[alt].transcript;
-            const conf = result[alt].confidence || 0;
-
-            if (conf > bestConfidence || alt === 0) {
-              bestConfidence = conf;
-              bestTranscript = text;
-            }
-
-            console.log(
-              `[Voice Guardian] ${result.isFinal ? '✅ FINAL' : '⏳ interim'} [alt ${alt}]: "${text}" (${(conf * 100).toFixed(1)}%)`
-            );
-
-            // Check EVERY alternative for a match
-            if (!hasMatch) {
-              const customWakeWord = userRef.current?.custom_wake_word || '';
-              const matched = checkFuzzyMatch(text, customWakeWord);
-              if (matched) {
-                hasMatch = true;
-                addDebugLog(`🚨 WAKE PHRASE DETECTED: "${matched}" — triggering SOS!`);
-                console.log(`[Voice Guardian] 🚨 WAKE PHRASE DETECTED: "${matched}" — triggering SOS!`);
-                setWakePhraseMatch(matched);
-                setLastWakePhrase(matched);
-                setSpeechStatus('matched');
-                setRecognitionConfidence(conf);
-                playConfirmationChirp();
-                triggerEmergency('voice_activation', matched);
-                // Resume listening after match
-                setTimeout(() => {
-                  if (enabledRef.current && !isEmergencyRef.current) {
-                    setSpeechStatus('listening');
-                  }
-                }, 3000);
-              }
-            }
+          
+          if (i === event.results.length - 1) {
+             bestConfidence = result[0].confidence || 0;
           }
         }
+        
+        fullTranscript = fullTranscript.trim();
         
         if (finalChunk) {
           setFinalTranscript(prev => (prev + ' ' + finalChunk.trim()).trim().slice(-100)); // keep last 100 chars
         }
 
         // Update live transcript display
-        if (bestTranscript.trim()) {
-          setLiveTranscript(bestTranscript.trim());
+        if (fullTranscript) {
+          setLiveTranscript(fullTranscript.slice(-100));
           setRecognitionConfidence(bestConfidence);
+        }
+
+        if (!hasMatch && fullTranscript) {
+          const customWakeWord = userRef.current?.custom_wake_word || '';
+          const matched = checkFuzzyMatch(fullTranscript, customWakeWord);
+          if (matched) {
+            hasMatch = true;
+            addDebugLog(`🚨 WAKE PHRASE DETECTED: "${matched}" — triggering SOS!`);
+            console.log(`[Voice Guardian] 🚨 WAKE PHRASE DETECTED: "${matched}" — triggering SOS!`);
+            setWakePhraseMatch(matched);
+            setLastWakePhrase(matched);
+            setSpeechStatus('matched');
+            setRecognitionConfidence(bestConfidence > 0 ? bestConfidence : 0.99);
+            playConfirmationChirp();
+            triggerEmergency('voice_activation', matched);
+            // Resume listening after match
+            setTimeout(() => {
+              if (enabledRef.current && !isEmergencyRef.current) {
+                setSpeechStatus('listening');
+              }
+            }, 3000);
+          }
         }
       };
 
@@ -516,10 +534,24 @@ export const EmergencyProvider = ({ children }) => {
     // Reset SOS Tracking State
     setSosState({
       locationAcquired: false,
+      backendTriggered: false,
+      errorMsg: null,
+      gpsError: null,
       smsSent: null,
       emailSent: null,
       whatsappSent: null,
       callSent: null
+    });
+
+    setSosTimers({
+      gpsStart: performance.now(),
+      gpsEnd: null,
+      apiStart: null,
+      apiEnd: null,
+      smsEnd: null,
+      emailEnd: null,
+      whatsappEnd: null,
+      callEnd: null
     });
 
     let batteryLevel = 100;
@@ -531,26 +563,52 @@ export const EmergencyProvider = ({ children }) => {
     navigator.geolocation.getCurrentPosition(
       async ({ coords: { latitude, longitude } }) => {
         console.log(`[Emergency] GPS acquired: ${latitude.toFixed(5)}, ${longitude.toFixed(5)}`);
-        setSosState(prev => ({ ...prev, locationAcquired: true }));
-        await _sendTriggerRequest(latitude, longitude, batteryLevel, type, wakeWord);
+        
+        const now = performance.now();
+        setSosTimers(prev => ({ ...prev, gpsEnd: now, apiStart: now }));
+
+        setSosState(prev => ({ ...prev, locationAcquired: true, gpsError: null }));
+        
+        let geocodedAddress = `Lat ${latitude.toFixed(4)}, Lng ${longitude.toFixed(4)}`;
+        try {
+          const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
+          if (response.ok) {
+            const data = await response.json();
+            if (data && data.display_name) {
+              geocodedAddress = data.display_name;
+              setCurrentAddress(geocodedAddress);
+            }
+          }
+        } catch (e) {
+          console.warn("Reverse geocoding failed:", e);
+        }
+
+        await _sendTriggerRequest(latitude, longitude, batteryLevel, type, wakeWord, geocodedAddress);
       },
       (err) => {
-        console.warn('[Emergency] GPS unavailable, using fallback coords:', err.message);
-        speakFeedback("I couldn't get your exact location. Retrying with approximate coordinates.");
-        _sendTriggerRequest(12.9716, 77.5946, batteryLevel, type, wakeWord);
+        let errorText = "Unable to obtain GPS";
+        if (err.code === 1) errorText = "Location permission denied";
+        if (err.code === 2) errorText = "Location position unavailable";
+        if (err.code === 3) errorText = "Location request timeout";
+
+        console.warn(`[Emergency] GPS unavailable (${errorText}), using fallback coords:`, err.message);
+        setSosState(prev => ({ ...prev, locationAcquired: false, gpsError: errorText }));
+        speakFeedback(`I couldn't get your exact location due to ${errorText}. Retrying with approximate coordinates.`);
+        
+        _sendTriggerRequest(12.9716, 77.5946, batteryLevel, type, wakeWord, "Unknown Location (Fallback)");
       },
-      { enableHighAccuracy: true, timeout: 8000 }
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     );
   };
 
-  const _sendTriggerRequest = async (lat, lng, battery, type, wakeWord) => {
+  const _sendTriggerRequest = async (lat, lng, battery, type, wakeWord, addressOverride) => {
     const formData = new FormData();
     formData.append('emergency_type', type === 'voice_activation' ? `Voice Activation (${wakeWord})` : type);
     formData.append('latitude', lat);
     formData.append('longitude', lng);
     formData.append('battery', battery);
     formData.append('signal_status', navigator.onLine ? 'Good' : 'Offline');
-    formData.append('address', `Approx. near lat ${lat.toFixed(4)}, lng ${lng.toFixed(4)}`);
+    formData.append('address', addressOverride || `Approx. near lat ${lat.toFixed(4)}, lng ${lng.toFixed(4)}`);
 
     addDebugLog(`📡 Sending Backend SOS Request (${type})`);
 
@@ -562,19 +620,25 @@ export const EmergencyProvider = ({ children }) => {
       });
       if (res.ok) {
         const session = await res.json();
+        
+        setSosTimers(prev => ({ ...prev, apiEnd: performance.now() }));
+
         addDebugLog(`✅ Backend SOS Acknowledged. ID: ${session.tracking_code}`);
         console.log('[Emergency] ✅ Backend acknowledged SOS. Session:', session.tracking_code);
         setActiveSession(session);
         setIsEmergency(true);
+        setSosState(prev => ({ ...prev, backendTriggered: true }));
       } else {
         addDebugLog(`❌ Backend SOS Error: ${res.status}`);
         console.error('[Emergency] Backend returned error:', res.status);
         setIsEmergency(true); // offline fallback
+        setSosState(prev => ({ ...prev, backendTriggered: false, errorMsg: `API Error: ${res.status}` }));
       }
     } catch (err) {
       addDebugLog(`❌ Backend SOS Fetch Failed: ${err.message}`);
       console.error('[Emergency] Fetch failed:', err.message);
       setIsEmergency(true); // offline fallback
+      setSosState(prev => ({ ...prev, backendTriggered: false, errorMsg: `Network Error: ${err.message}` }));
     }
   };
 
@@ -692,12 +756,14 @@ export const EmergencyProvider = ({ children }) => {
       micPermissionError,
       voiceGuardianEnabled,
       sosState,
+      sosTimers,
       setVoiceGuardianEnabled,
       requestMicPermissionAndStart,
       triggerEmergency,
       resolveEmergency,
       startSpeechRecognition,
       stopSpeechRecognition,
+      currentAddress
     }}>
       {children}
     </EmergencyContext.Provider>

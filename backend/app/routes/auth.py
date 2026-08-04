@@ -19,9 +19,9 @@ def register(user_in: schemas.UserCreate, db: Session = Depends(get_db)):
     # Hash password
     hashed_pwd = auth.get_password_hash(user_in.password)
     
-    # Check roles - first user is admin, else normal user (for demo ease)
+    # Check roles - first user is SUPER_ADMIN, else USER
     user_count = db.query(models.User).count()
-    role = "admin" if user_count == 0 else "user"
+    role = "SUPER_ADMIN" if user_count == 0 else "USER"
     
     # Generate unique 8-character tracking code
     tracking_code = str(uuid.uuid4())[:8].upper()
@@ -45,6 +45,12 @@ def login(credentials: schemas.UserLogin, db: Session = Depends(get_db)):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Incorrect email or password"
+        )
+        
+    if user.role in ["SUPER_ADMIN", "ADMIN", "MODERATOR"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Administrators must use the dedicated Admin Portal."
         )
     
     access_token = auth.create_access_token(data={"sub": user.email})

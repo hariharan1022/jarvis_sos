@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, BackgroundTasks
 from sqlalchemy.orm import Session
 import os
 import uuid
@@ -14,6 +14,7 @@ router = APIRouter(prefix="/api/emergency", tags=["emergency"])
 
 @router.post("/trigger", response_model=schemas.EmergencySessionResponse)
 async def trigger_emergency(
+    background_tasks: BackgroundTasks,
     emergency_type: str = Form("manual"),
     latitude: float = Form(...),
     longitude: float = Form(...),
@@ -90,7 +91,8 @@ async def trigger_emergency(
         "blood_group": current_user.blood_group
     }
     
-    await NotifierService.trigger_emergency_notifications(
+    background_tasks.add_task(
+        NotifierService.trigger_emergency_notifications,
         user_name=current_user.name,
         contacts=contacts,
         session_details=session_data
