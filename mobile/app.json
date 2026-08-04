@@ -1,0 +1,54 @@
+{
+  "expo": {
+    "name": "SafeNova AI",
+    "slug": "safenova-ai",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.safenova.ai",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "SafeNova needs microphone access to enable Voice Guardian wake-word detection for emergency SOS activation.",
+        "NSLocationWhenInUseUsageDescription": "SafeNova needs location access to send your coordinates to emergency contacts during an SOS event.",
+        "NSLocationAlwaysUsageDescription": "SafeNova needs background location to track your position during active emergencies.",
+        "NSCameraUsageDescription": "SafeNova uses the camera to capture evidence during emergency situations.",
+        "NSSpeechRecognitionUsageDescription": "SafeNova uses speech recognition to listen for your voice emergency commands."
+      }
+    },
+    "android": {
+      "package": "com.safenova.ai",
+      "adaptiveIcon": {
+        "backgroundColor": "#07080d",
+        "foregroundImage": "./assets/icon.png"
+      },
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.CAMERA",
+        "android.permission.VIBRATE",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.POST_NOTIFICATIONS"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/icon.png"
+    },
+    "plugins": [
+      "expo-location",
+      "expo-av",
+      "expo-camera",
+      "expo-notifications",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "SafeNova needs microphone access to detect emergency voice commands.",
+          "speechRecognitionPermission": "SafeNova uses speech recognition to listen for wake phrases like 'Nova Help Me'."
+        }
+      ]
+    ]
+  }
+}
