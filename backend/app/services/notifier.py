@@ -77,7 +77,7 @@ async def email_queue_worker():
                 continue
             
             # Dispatch
-            success = await NotifierService._dispatch_email_direct(
+            success, err_msg = await NotifierService._dispatch_email_direct(
                 email=item["email"],
                 subject=item["subject"],
                 plain_message=item["plain"],
@@ -103,7 +103,7 @@ async def email_queue_worker():
                         "channel": "email",
                         "status": "failed",
                         "recipient": item['email'],
-                        "error": "Failed after 3 attempts"
+                        "error": err_msg or "Failed after 3 attempts"
                     })
                     email_queue.task_done()
                 else:
@@ -116,7 +116,7 @@ async def email_queue_worker():
                         "channel": "email",
                         "status": "retrying",
                         "recipient": item['email'],
-                        "error": "Delivery failed, retrying"
+                        "error": err_msg or "Delivery failed, retrying"
                     })
                     await email_queue.put(item)
                     
@@ -149,16 +149,8 @@ class NotifierService:
         ]) and "your-twilio" not in settings.TWILIO_ACCOUNT_SID and settings.TWILIO_ACCOUNT_SID != ""
 
         if not is_configured:
-            try:
-                import os
-                os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
-                mock_filepath = os.path.join(settings.UPLOAD_DIR, "received_sms.txt")
-                with open(mock_filepath, "a", encoding="utf-8") as f:
-                    f.write(f"[{datetime.utcnow().isoformat()}] To: {normalized_phone}\nMessage: {message}\n\n")
-                logger.info(f"[MOCK SMS SUCCESS] Creds not configured. Appended SMS to: {mock_filepath}")
-            except Exception as e:
-                logger.error(f"Error saving mock SMS: {e}")
-            return
+            logger.error("Twilio credentials not configured. SMS failing explicitly.")
+            raise ValueError("Twilio API credentials not configured in environment.")
 
         try:
             url = f"https://api.twilio.com/2010-04-01/Accounts/{settings.TWILIO_ACCOUNT_SID}/Messages.json"
@@ -202,16 +194,8 @@ class NotifierService:
         ]) and "your-twilio" not in settings.TWILIO_ACCOUNT_SID and settings.TWILIO_ACCOUNT_SID != ""
 
         if not is_configured:
-            try:
-                import os
-                os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
-                mock_filepath = os.path.join(settings.UPLOAD_DIR, "received_whatsapp.txt")
-                with open(mock_filepath, "a", encoding="utf-8") as f:
-                    f.write(f"[{datetime.utcnow().isoformat()}] To: {normalized_phone}\nMessage: {message}\n\n")
-                logger.info(f"[MOCK WHATSAPP SUCCESS] Creds not configured. Appended WhatsApp to: {mock_filepath}")
-            except Exception as e:
-                logger.error(f"Error saving mock WhatsApp: {e}")
-            return
+            logger.error("Twilio WhatsApp credentials not configured. Failing explicitly.")
+            raise ValueError("Twilio WhatsApp API credentials not configured.")
 
         try:
             url = f"https://api.twilio.com/2010-04-01/Accounts/{settings.TWILIO_ACCOUNT_SID}/Messages.json"
@@ -258,8 +242,8 @@ class NotifierService:
         return True
 
     @staticmethod
-    async def _dispatch_email_direct(email: str, subject: str, plain_message: str, html_message: str, priority: int = 1) -> bool:
-        """Processes actual delivery using the email provider selected in settings."""
+    async def _dispatch_email_direct(email: str, subject: str, plain_message: str, html_message: str, priority: int = 1):
+        """Processes actual delivery using the email provider selected in settings. Returns (bool, str)."""
         logger.info(f"[EMAIL SENDING] Provider-dispatching to: {email} | Subject: {subject}")
         log_notification("Email", email, f"Subject: {subject}\n{plain_message}", priority)
 
@@ -274,7 +258,7 @@ class NotifierService:
             return await NotifierService._dispatch_smtp(email, subject, plain_message, html_message)
 
     @staticmethod
-    async def _dispatch_resend(email: str, subject: str, plain_message: str, html_message: str) -> bool:
+    async def _dispatch_resend(email: str, subject: str, plain_message: str, html_message: str):
         from ..config import settings
         if not settings.RESEND_API_KEY:
             logger.error("Resend API Key is missing. Fallback to standard SMTP.")
@@ -303,13 +287,13 @@ class NotifierService:
                 res_body = response.read().decode("utf-8")
                 res_json = json.loads(res_body)
                 logger.info(f"Resend email dispatched successfully. ID: {res_json.get('id')}")
-                return True
+                return True, ""
         except Exception as e:
             logger.error(f"Resend API error dispatching email to {email}: {e}")
-            return False
+            return False, f"Resend API Error: {str(e)}"
 
     @staticmethod
-    async def _dispatch_sendgrid(email: str, subject: str, plain_message: str, html_message: str) -> bool:
+    async def _dispatch_sendgrid(email: str, subject: str, plain_message: str, html_message: str):
         from ..config import settings
         if not settings.SENDGRID_API_KEY:
             logger.error("SendGrid API Key is missing. Fallback to standard SMTP.")
@@ -351,13 +335,13 @@ class NotifierService:
             with urllib.request.urlopen(req, timeout=10) as response:
                 # SendGrid returns 202 Accepted on success
                 logger.info(f"SendGrid email dispatched successfully.")
-                return True
+                return True, ""
         except Exception as e:
             logger.error(f"SendGrid API error dispatching email to {email}: {e}")
-            return False
+            return False, f"SendGrid API Error: {str(e)}"
 
     @staticmethod
-    async def _dispatch_smtp(email: str, subject: str, plain_message: str, html_message: str) -> bool:
+    async def _dispatch_smtp(email: str, subject: str, plain_message: str, html_message: str):
         from ..config import settings
         
         # Check if SMTP is configured with actual credentials (not placeholders or empty strings)
@@ -369,21 +353,8 @@ class NotifierService:
         ]) and "your-email" not in settings.SMTP_USER and settings.SMTP_USER != ""
         
         if not is_configured:
-            try:
-                import os
-                os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
-                mock_filename = f"received_email_{email}.html"
-                mock_filepath = os.path.join(settings.UPLOAD_DIR, mock_filename)
-                
-                with open(mock_filepath, "w", encoding="utf-8") as f:
-                    f.write(html_message)
-                
-                logger.info(f"[MOCK EMAIL SUCCESS] SMTP not configured. Saved email HTML to: {mock_filepath}")
-                log_notification("Email (Mock)", email, f"[Saved locally: /api/emergency/evidence-file/{mock_filename}] Subject: {subject}\n{plain_message}", 1)
-                return True
-            except Exception as e:
-                logger.error(f"Error saving mock email to file: {e}")
-                return False
+            logger.error("SMTP credentials not configured. Email failing explicitly.")
+            return False, "SMTP credentials missing"
 
         import smtplib
         from email.utils import formatdate, make_msgid
@@ -417,10 +388,10 @@ class NotifierService:
             server.send_message(msg)
             server.quit()
             logger.info(f"SMTP email successfully delivered to {email}")
-            return True
+            return True, ""
         except Exception as e:
             logger.error(f"SMTP error dispatching email to {email}: {e}")
-            return False
+            return False, f"SMTP Error: {str(e)}"
 
     @staticmethod
     async def send_voice_call(phone: str, text: str, priority: int = 1):

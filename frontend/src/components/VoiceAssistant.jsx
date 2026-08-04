@@ -22,7 +22,8 @@ export const VoiceAssistant = () => {
     requestMicPermissionAndStart,
     startSpeechRecognition, 
     stopSpeechRecognition,
-    sosState
+    sosState,
+    currentAddress
   } = useEmergency();
   
   const [showDebug, setShowDebug] = React.useState(false);
@@ -278,6 +279,38 @@ export const VoiceAssistant = () => {
             <div className="flex justify-between border-b border-slate-800 pb-1">
               <span className="text-slate-500">Last Trigger:</span>
               <span className="text-rose-400">{lastWakePhrase || 'NONE'}</span>
+            </div>
+            
+            <div className="flex justify-between border-b border-slate-800 pb-1">
+              <span className="text-slate-500">Internet:</span>
+              <span className={navigator.onLine ? 'text-emerald-400' : 'text-rose-400'}>{navigator.onLine ? 'ONLINE' : 'OFFLINE'}</span>
+            </div>
+            <div className="flex justify-between border-b border-slate-800 pb-1">
+              <span className="text-slate-500">WebSocket:</span>
+              <span className={isEmergency ? 'text-emerald-400' : 'text-slate-500'}>{isEmergency ? 'CONNECTED' : 'IDLE'}</span>
+            </div>
+          </div>
+          
+          <div className="flex flex-col gap-1 mt-1 border-t border-slate-800 pt-1">
+            <span className="text-slate-500 uppercase font-bold text-[8px]">Live Address:</span>
+            <div className="bg-slate-950 p-1 rounded min-h-[1.5rem] break-words text-cyan-400/80">{currentAddress || 'Unknown'}</div>
+          </div>
+
+          <div className="flex flex-col gap-1 mt-1 border-t border-slate-800 pt-1">
+            <span className="text-slate-500 uppercase font-bold text-[8px]">Backend Notification Status:</span>
+            <div className="grid grid-cols-1 gap-1">
+              <div className="flex justify-between bg-slate-950 p-1 rounded">
+                <span>SMTP Email:</span>
+                <span className={sosState?.emailSent === true ? 'text-emerald-400' : sosState?.emailSent === false ? 'text-rose-400 truncate max-w-[120px]' : 'text-slate-500'}>{sosState?.emailSent === true ? 'DELIVERED' : sosState?.emailSent === false ? sosState?.emailError || 'FAILED' : 'STANDBY'}</span>
+              </div>
+              <div className="flex justify-between bg-slate-950 p-1 rounded">
+                <span>Twilio SMS:</span>
+                <span className={sosState?.smsSent === true ? 'text-emerald-400' : sosState?.smsSent === false ? 'text-rose-400 truncate max-w-[120px]' : 'text-slate-500'}>{sosState?.smsSent === true ? 'DELIVERED' : sosState?.smsSent === false ? sosState?.smsError || 'FAILED' : 'STANDBY'}</span>
+              </div>
+              <div className="flex justify-between bg-slate-950 p-1 rounded">
+                <span>Twilio WhatsApp:</span>
+                <span className={sosState?.whatsappSent === true ? 'text-emerald-400' : sosState?.whatsappSent === false ? 'text-rose-400 truncate max-w-[120px]' : 'text-slate-500'}>{sosState?.whatsappSent === true ? 'DELIVERED' : sosState?.whatsappSent === false ? sosState?.whatsappError || 'FAILED' : 'STANDBY'}</span>
+              </div>
             </div>
           </div>
           

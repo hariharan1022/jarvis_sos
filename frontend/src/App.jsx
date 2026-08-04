@@ -6,7 +6,13 @@ import { Login } from './pages/Login';
 import { Register } from './pages/Register';
 import { UserDashboard } from './pages/UserDashboard';
 import { GuardianDashboard } from './pages/GuardianDashboard';
-import { AdminDashboard } from './pages/AdminDashboard';
+import { AdminAuthProvider } from './contexts/AdminAuthContext';
+import { AdminRoute } from './components/AdminRoute';
+import { AdminLayout } from './layouts/AdminLayout';
+import { AdminLogin } from './pages/admin/AdminLogin';
+import { AdminDashboard } from './pages/admin/AdminDashboard';
+import { AdminUsers } from './pages/admin/AdminUsers';
+import { AdminIncidents } from './pages/admin/AdminIncidents';
 
 // Protected Route wrapper
 const ProtectedRoute = ({ children, allowedRoles = [] }) => {
@@ -34,6 +40,7 @@ const ProtectedRoute = ({ children, allowedRoles = [] }) => {
 function App() {
   return (
     <BrowserRouter>
+      <AdminAuthProvider>
       <AuthProvider>
         <EmergencyProvider>
           <Routes>
@@ -48,27 +55,36 @@ function App() {
             <Route 
               path="/dashboard" 
               element={
-                <ProtectedRoute allowedRoles={['user', 'admin']}>
+                <ProtectedRoute allowedRoles={['USER', 'user']}>
                   <UserDashboard />
                 </ProtectedRoute>
               } 
             />
 
-            {/* Protected Admin Control Desk */}
-            <Route 
-              path="/admin" 
-              element={
-                <ProtectedRoute allowedRoles={['admin']}>
-                  <AdminDashboard />
-                </ProtectedRoute>
-              } 
-            />
+            {/* Separate Admin Authentication System */}
+            <Route path="/admin/login" element={<AdminLogin />} />
+
+            {/* Protected Admin Shell */}
+            <Route path="/admin" element={<AdminRoute requiredRoles={['SUPER_ADMIN', 'ADMIN', 'MODERATOR']} />}>
+              <Route element={<AdminLayout />}>
+                <Route index element={<Navigate to="/admin/dashboard" replace />} />
+                <Route path="dashboard" element={<AdminDashboard />} />
+                <Route path="users" element={<AdminUsers />} />
+                <Route path="incidents" element={<AdminIncidents />} />
+                {/* Placeholders for future pages */}
+                <Route path="reports" element={<div className="p-8 text-white">Reports Module (Coming Soon)</div>} />
+                <Route path="analytics" element={<div className="p-8 text-white">Analytics Module (Coming Soon)</div>} />
+                <Route path="system" element={<div className="p-8 text-white">System Status (Coming Soon)</div>} />
+                <Route path="settings" element={<div className="p-8 text-white">Settings Module (Coming Soon)</div>} />
+              </Route>
+            </Route>
 
             {/* Fallbacks */}
             <Route path="*" element={<Navigate to="/login" replace />} />
           </Routes>
         </EmergencyProvider>
       </AuthProvider>
+      </AdminAuthProvider>
     </BrowserRouter>
   );
 }

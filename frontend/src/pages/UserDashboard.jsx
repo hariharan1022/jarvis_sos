@@ -6,14 +6,15 @@ import { FakeCall } from '../components/FakeCall';
 import { FakeRecording } from '../components/FakeRecording';
 import {
   Shield, User, Phone, Users, FileText, Settings, LogOut,
-  MapPin, Heart, AlertTriangle, PhoneCall, Radio, Video, Plus, Trash2, ShieldCheck, Map, Mail
+  MapPin, Heart, AlertTriangle, PhoneCall, Radio, Video, Plus, Trash2, ShieldCheck, Map, Mail,
+  CheckCircle2, Loader2, AlertCircle, MessageSquare
 } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
 export const UserDashboard = () => {
   const { user, token, logout, updateProfile, API_URL } = useAuth();
-  const { isEmergency, activeSession, triggerEmergency, resolveEmergency, speechStatus } = useEmergency();
+  const { isEmergency, activeSession, triggerEmergency, resolveEmergency, speechStatus, sosState } = useEmergency();
 
   // Dashboard navigation tabs: dashboard, contacts, medical, routing, settings, inbox
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -369,15 +370,41 @@ export const UserDashboard = () => {
     pathLayersRef.current.push(startMarker, endMarker);
   };
 
+  const [sosSuccessShown, setSosSuccessShown] = useState(false);
+
+  useEffect(() => {
+    if (isEmergency && sosState && !sosSuccessShown) {
+      const allSuccess = ['emailSent', 'smsSent', 'whatsappSent', 'callSent'].every(
+        key => sosState[key] === null || sosState[key] === true
+      );
+      const hasTrue = ['emailSent', 'smsSent', 'whatsappSent', 'callSent'].some(key => sosState[key] === true);
+      const hasPending = ['emailSent', 'smsSent', 'whatsappSent', 'callSent'].some(key => sosState[key] === 'retrying' || sosState[key] === false);
+
+      if (hasTrue && !hasPending && allSuccess) {
+        setSosSuccessShown(true);
+      }
+    }
+  }, [isEmergency, sosState, sosSuccessShown]);
+
   const triggerManualPanic = () => {
     if (isEmergency) {
       resolveEmergency();
       setToast({ message: 'Emergency resolved successfully.', type: 'info' });
+      setSosSuccessShown(false);
       setTimeout(() => setToast(null), 4000);
     } else {
+      if (contacts.length === 0) {
+        setToast({ message: 'No emergency contacts configured. Please add contacts first.', type: 'error' });
+        setTimeout(() => setToast(null), 6000);
+        return;
+      }
+      if (!navigator.onLine) {
+        setToast({ message: 'Network unavailable. Please check your internet connection.', type: 'error' });
+        setTimeout(() => setToast(null), 6000);
+        return;
+      }
       triggerEmergency('manual');
-      setToast({ message: 'Emergency SOS Activated! Outbound alerts sent to your contacts.', type: 'success' });
-      setTimeout(() => setToast(null), 6000);
+      setSosSuccessShown(false);
     }
   };
 
@@ -388,9 +415,30 @@ export const UserDashboard = () => {
       <div className="neon-grid" />
       {/* Toast Notification */}
       {toast && (
-        <div className="fixed top-6 right-6 z-50 p-4 bg-[#0f111a] border border-cyan-500/30 rounded-xl shadow-2xl flex items-center gap-3 animate-bounce">
-          <div className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
+        <div className={`fixed top-6 right-6 z-50 p-4 bg-[#0f111a] border rounded-xl shadow-2xl flex items-center gap-3 animate-bounce ${toast.type === 'error' ? 'border-red-500/50' : 'border-cyan-500/30'}`}>
+          <div className={`w-2 h-2 rounded-full animate-ping ${toast.type === 'error' ? 'bg-red-500' : 'bg-cyan-400'}`} />
           <span className="text-xs font-bold text-slate-100">{toast.message}</span>
+        </div>
+      )}
+
+      {/* Success Dialog Overlay */}
+      {sosSuccessShown && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+          <div className="bg-[#0f111a] border border-emerald-500/30 rounded-2xl p-8 max-w-md w-full text-center shadow-[0_0_50px_rgba(16,185,129,0.15)] animate-in zoom-in-95 fade-in duration-300">
+            <div className="w-20 h-20 bg-emerald-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
+              <CheckCircle2 className="w-10 h-10 text-emerald-400" />
+            </div>
+            <h2 className="text-2xl font-black text-white mb-2">Alerts Sent Successfully</h2>
+            <p className="text-slate-400 mb-6 text-sm">
+              Your trusted contacts have been notified. Live location sharing has started.
+            </p>
+            <button 
+              onClick={() => setSosSuccessShown(false)}
+              className="bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 font-bold py-3 px-8 rounded-full transition-colors cursor-pointer"
+            >
+              Continue Monitoring
+            </button>
+          </div>
         </div>
       )}
       {/* Side Navigation Bar */}
@@ -629,65 +677,151 @@ export const UserDashboard = () => {
             <div className="grid grid-cols-1 lg:grid-cols-10 gap-4 min-h-0 items-stretch flex-[1.1]">
 
               {/* SOS Column */}
-              <div className="lg:col-span-4 glass-panel p-4 flex flex-col justify-between items-center text-center relative overflow-hidden bg-[#0c0508]/85 border border-red-950/40 shadow-[0_0_25px_rgba(255,30,60,0.05)]">
-                {/* HUD Coordinates Background Crosshairs & Radar Ticks */}
-                <div className="absolute inset-0 bg-[linear-gradient(rgba(255,30,60,0.01)_1px,transparent_1px),linear-gradient(90deg,rgba(255,30,60,0.01)_1px,transparent_1px)] bg-[size:16px_16px] pointer-events-none opacity-45" />
+              <div className={`lg:col-span-4 glass-panel p-4 flex flex-col items-center justify-center text-center relative overflow-hidden ${isEmergency ? 'bg-red-950/20 border-red-500/30' : 'bg-[#0c0508]/85 border-red-950/40 shadow-[0_0_25px_rgba(255,30,60,0.05)]'}`}>
+                {isEmergency ? (
+                  <div className="w-full flex flex-col h-full justify-between items-center z-10 p-2">
+                    <div className="text-sm font-bold text-red-500 uppercase tracking-widest flex items-center gap-2 mb-4">
+                      <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
+                      Emergency Activated
+                    </div>
 
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-15">
-                  <svg className="w-full h-full text-red-500 max-w-[260px] max-h-[260px]" viewBox="0 0 100 100" fill="none" stroke="currentColor">
-                    <circle cx="50" cy="50" r="45" strokeWidth="0.1" strokeDasharray="1 1.5" />
-                    <circle cx="50" cy="50" r="36" strokeWidth="0.15" />
-                    <circle cx="50" cy="50" r="26" strokeWidth="0.1" strokeDasharray="3 1" />
-                    <circle cx="50" cy="50" r="14" strokeWidth="0.08" />
-                    <line x1="50" y1="0" x2="50" y2="100" strokeWidth="0.08" strokeDasharray="1 2" />
-                    <line x1="0" y1="50" x2="100" y2="50" strokeWidth="0.08" strokeDasharray="1 2" />
-                    {/* Compass Angle Ticks */}
-                    <text x="47.5" y="8" className="text-[3px] font-mono fill-red-500 font-bold">000°</text>
-                    <text x="91" y="51" className="text-[3px] font-mono fill-red-500 font-bold">090°</text>
-                    <text x="47.5" y="94" className="text-[3px] font-mono fill-red-500 font-bold">180°</text>
-                    <text x="3" y="51" className="text-[3px] font-mono fill-red-500 font-bold">270°</text>
-                  </svg>
-                </div>
+                    <div className="flex flex-col gap-3 w-full max-w-[240px] text-left">
+                      <div className="flex items-center gap-3 text-sm font-medium">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                        <span className="text-emerald-100">Contacts Loaded</span>
+                      </div>
 
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-44 h-44 border border-red-500/5 rounded-full pointer-events-none animate-pulse" />
+                      <div className="flex items-center gap-3 text-sm font-medium">
+                        {sosState?.locationAcquired ? (
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                        ) : sosState?.gpsError ? (
+                          <AlertCircle className="w-4 h-4 text-red-500" />
+                        ) : (
+                          <Loader2 className="w-4 h-4 text-cyan-500 animate-spin" />
+                        )}
+                        <span className={sosState?.locationAcquired ? "text-emerald-100" : sosState?.gpsError ? "text-red-400" : "text-slate-300"}>
+                          {sosState?.gpsError ? sosState.gpsError : 'Location Acquired'}
+                        </span>
+                      </div>
 
-                <div className="flex flex-col gap-0.5 items-center z-10">
-                  <h2 className="text-xs font-black uppercase tracking-wider text-slate-100 flex items-center gap-1.5">
-                    Quick Emergency SOS <span className="text-red-500 font-sans tracking-tight">///</span>
-                  </h2>
-                  <p className="text-[9px] text-slate-450 leading-tight max-w-[220px]">
-                    Press the SOS button to instantly alert your contacts and share live location.
-                  </p>
-                </div>
+                      <div className="flex items-center gap-3 text-sm font-medium">
+                        {sosState?.backendTriggered ? (
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                        ) : sosState?.errorMsg ? (
+                          <AlertCircle className="w-4 h-4 text-red-500" />
+                        ) : (
+                          <Loader2 className="w-4 h-4 text-cyan-500 animate-spin" />
+                        )}
+                        <span className={sosState?.backendTriggered ? "text-emerald-100" : sosState?.errorMsg ? "text-red-400" : "text-slate-300"}>
+                          {sosState?.errorMsg ? sosState.errorMsg : 'Emergency API Activated'}
+                        </span>
+                      </div>
 
-                <div className="relative my-2 flex items-center justify-center z-10 scale-90">
-                  {/* Outer Tech Ring 1 (Dotted / Dashed Spinner) */}
-                  <div className="absolute w-40 h-40 rounded-full border border-dashed border-red-500/25 animate-[spin_60s_linear_infinite]" />
-                  {/* Outer Tech Ring 2 (Ticker Counter-Spinner) */}
-                  <div className="absolute w-34 h-34 rounded-full border border-red-500/15 animate-[spin_30s_linear_infinite_reverse]" />
-                  {/* Outer Tech Ring 3 (Cardinals indicators) */}
-                  <div className="absolute w-37 h-37 rounded-full border border-red-500/5">
-                    <div className="absolute top-0 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-red-500 shadow-[0_0_8px_#ff1e3c]" />
-                    <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-red-500 shadow-[0_0_8px_#ff1e3c]" />
-                    <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-red-500 shadow-[0_0_8px_#ff1e3c]" />
-                    <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-red-500 shadow-[0_0_8px_#ff1e3c]" />
+                      <div className="flex items-center gap-3 text-sm font-medium">
+                        {sosState?.emailSent === true ? (
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                        ) : sosState?.emailSent === false ? (
+                          <AlertCircle className="w-4 h-4 text-red-500" />
+                        ) : sosState?.emailSent === 'retrying' ? (
+                          <Loader2 className="w-4 h-4 text-amber-500 animate-spin" />
+                        ) : (
+                          <Loader2 className="w-4 h-4 text-cyan-500 animate-spin" />
+                        )}
+                        <span className={sosState?.emailSent === true ? "text-emerald-100" : sosState?.emailSent === false ? "text-red-400" : "text-slate-300"}>
+                          {sosState?.emailSent === false ? 'Email Service Failed' : 'Email Sent'}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-3 text-sm font-medium">
+                        {sosState?.smsSent === true ? (
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                        ) : sosState?.smsSent === false ? (
+                          <AlertCircle className="w-4 h-4 text-red-500" />
+                        ) : sosState?.smsSent === 'retrying' ? (
+                          <Loader2 className="w-4 h-4 text-amber-500 animate-spin" />
+                        ) : (
+                          <Loader2 className="w-4 h-4 text-cyan-500 animate-spin" />
+                        )}
+                        <span className={sosState?.smsSent === true ? "text-emerald-100" : sosState?.smsSent === false ? "text-red-400" : "text-slate-300"}>
+                          {sosState?.smsSent === false ? 'SMS Service Failed' : 'SMS Sent'}
+                        </span>
+                      </div>
+                      
+                      <div className="flex items-center gap-3 text-sm font-medium">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                        <span className="text-emerald-100">Live Tracking Started</span>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={triggerManualPanic}
+                      className="mt-6 w-full max-w-[240px] bg-red-900/40 hover:bg-red-800/60 border border-red-500/50 text-white font-bold py-3 rounded-xl transition-all cursor-pointer shadow-[0_0_15px_rgba(255,30,60,0.2)]"
+                    >
+                      Resolve Emergency
+                    </button>
                   </div>
+                ) : (
+                  <>
+                    {/* HUD Coordinates Background Crosshairs & Radar Ticks */}
+                    <div className="absolute inset-0 bg-[linear-gradient(rgba(255,30,60,0.01)_1px,transparent_1px),linear-gradient(90deg,rgba(255,30,60,0.01)_1px,transparent_1px)] bg-[size:16px_16px] pointer-events-none opacity-45" />
 
-                  {/* Actual Button - Slimmed */}
-                  <button
-                    onClick={triggerManualPanic}
-                    className={`sos-btn ${isEmergency ? 'bg-red-800 animate-none' : ''} cursor-pointer flex flex-col items-center justify-center z-10`}
-                    style={{ width: '104px', height: '104px' }}
-                  >
-                    <span className="text-2xl font-extrabold text-white tracking-widest leading-none">SOS</span>
-                    <span className="text-[7.5px] text-white/80 font-black tracking-widest uppercase mt-1.5">{isEmergency ? 'Resolve' : 'Tap to Trigger'}</span>
-                  </button>
-                </div>
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-15">
+                      <svg className="w-full h-full text-red-500 max-w-[260px] max-h-[260px]" viewBox="0 0 100 100" fill="none" stroke="currentColor">
+                        <circle cx="50" cy="50" r="45" strokeWidth="0.1" strokeDasharray="1 1.5" />
+                        <circle cx="50" cy="50" r="36" strokeWidth="0.15" />
+                        <circle cx="50" cy="50" r="26" strokeWidth="0.1" strokeDasharray="3 1" />
+                        <circle cx="50" cy="50" r="14" strokeWidth="0.08" />
+                        <line x1="50" y1="0" x2="50" y2="100" strokeWidth="0.08" strokeDasharray="1 2" />
+                        <line x1="0" y1="50" x2="100" y2="50" strokeWidth="0.08" strokeDasharray="1 2" />
+                        {/* Compass Angle Ticks */}
+                        <text x="47.5" y="8" className="text-[3px] font-mono fill-red-500 font-bold">000°</text>
+                        <text x="91" y="51" className="text-[3px] font-mono fill-red-500 font-bold">090°</text>
+                        <text x="47.5" y="94" className="text-[3px] font-mono fill-red-500 font-bold">180°</text>
+                        <text x="3" y="51" className="text-[3px] font-mono fill-red-500 font-bold">270°</text>
+                      </svg>
+                    </div>
 
-                <div className="flex items-center gap-1.5 px-3 py-1 bg-[#090406]/85 border border-red-500/35 rounded-full z-10 shadow-[0_0_10px_rgba(255,30,60,0.08)]">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  <span className="text-[8px] text-emerald-450 font-black uppercase tracking-wider">GPS Signal: Strong</span>
-                </div>
+                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-44 h-44 border border-red-500/5 rounded-full pointer-events-none animate-pulse" />
+
+                    <div className="flex flex-col gap-0.5 items-center z-10 mt-2">
+                      <h2 className="text-xs font-black uppercase tracking-wider text-slate-100 flex items-center gap-1.5">
+                        Quick Emergency SOS <span className="text-red-500 font-sans tracking-tight">///</span>
+                      </h2>
+                      <p className="text-[9px] text-slate-450 leading-tight max-w-[220px]">
+                        Press the SOS button to instantly alert your contacts and share live location.
+                      </p>
+                    </div>
+
+                    <div className="relative my-4 flex items-center justify-center z-10 scale-90">
+                      {/* Outer Tech Ring 1 (Dotted / Dashed Spinner) */}
+                      <div className="absolute w-40 h-40 rounded-full border border-dashed border-red-500/25 animate-[spin_60s_linear_infinite]" />
+                      {/* Outer Tech Ring 2 (Ticker Counter-Spinner) */}
+                      <div className="absolute w-34 h-34 rounded-full border border-red-500/15 animate-[spin_30s_linear_infinite_reverse]" />
+                      {/* Outer Tech Ring 3 (Cardinals indicators) */}
+                      <div className="absolute w-37 h-37 rounded-full border border-red-500/5">
+                        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-red-500 shadow-[0_0_8px_#ff1e3c]" />
+                        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-red-500 shadow-[0_0_8px_#ff1e3c]" />
+                        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-red-500 shadow-[0_0_8px_#ff1e3c]" />
+                        <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-red-500 shadow-[0_0_8px_#ff1e3c]" />
+                      </div>
+
+                      {/* Actual Button - Slimmed */}
+                      <button
+                        onClick={triggerManualPanic}
+                        className="sos-btn cursor-pointer flex flex-col items-center justify-center z-10"
+                        style={{ width: '104px', height: '104px' }}
+                      >
+                        <span className="text-2xl font-extrabold text-white tracking-widest leading-none">SOS</span>
+                        <span className="text-[7.5px] text-white/80 font-black tracking-widest uppercase mt-1.5">Tap to Trigger</span>
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 px-3 py-1 mb-2 bg-[#090406]/85 border border-red-500/35 rounded-full z-10 shadow-[0_0_10px_rgba(255,30,60,0.08)]">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      <span className="text-[8px] text-emerald-450 font-black uppercase tracking-wider">GPS Signal: Strong</span>
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* Voice Guardian Column */}
