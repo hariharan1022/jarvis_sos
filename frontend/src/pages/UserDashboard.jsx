@@ -223,6 +223,13 @@ export const UserDashboard = () => {
 
   const handleAddContact = async (e) => {
     e.preventDefault();
+    // Basic phone validation — must include country code digits
+    const cleanPhone = newContact.phone.replace(/\s/g, '');
+    if (!/^\+?[0-9]{7,15}$/.test(cleanPhone)) {
+      setToast({ message: '\u274c Invalid phone number. Include country code (e.g. +91XXXXXXXXXX)', type: 'error' });
+      setTimeout(() => setToast(null), 5000);
+      return;
+    }
     try {
       const res = await fetch(`${API_URL}/users/contacts`, {
         method: 'POST',
@@ -230,7 +237,7 @@ export const UserDashboard = () => {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify(newContact)
+        body: JSON.stringify({ ...newContact, phone: cleanPhone })
       });
       if (res.ok) {
         fetchContacts();
@@ -238,9 +245,17 @@ export const UserDashboard = () => {
           name: '', phone: '', email: '', whatsapp: '',
           notify_sms: true, notify_whatsapp: false, notify_email: true, notify_call: false, priority: 1
         });
+        setToast({ message: '\u2705 Emergency contact added successfully.', type: 'success' });
+        setTimeout(() => setToast(null), 4000);
+      } else {
+        const err = await res.json();
+        setToast({ message: `\u274c ${err.detail || 'Failed to add contact.'}`, type: 'error' });
+        setTimeout(() => setToast(null), 5000);
       }
     } catch (e) {
       console.error(e);
+      setToast({ message: '\u274c Network error adding contact.', type: 'error' });
+      setTimeout(() => setToast(null), 5000);
     }
   };
 
@@ -252,6 +267,8 @@ export const UserDashboard = () => {
       });
       if (res.ok) {
         fetchContacts();
+        setToast({ message: 'Contact removed.', type: 'info' });
+        setTimeout(() => setToast(null), 3000);
       }
     } catch (e) {
       console.error(e);
@@ -265,9 +282,11 @@ export const UserDashboard = () => {
         blood_group: bloodGroup,
         medical_notes: medicalNotes
       });
-      alert('Guardian settings synced successfully.');
+      setToast({ message: '✅ Guardian settings synced successfully.', type: 'success' });
+      setTimeout(() => setToast(null), 4000);
     } catch (err) {
-      alert(err.message);
+      setToast({ message: `❌ Failed to save: ${err.message}`, type: 'error' });
+      setTimeout(() => setToast(null), 6000);
     }
   };
 
@@ -437,7 +456,7 @@ export const UserDashboard = () => {
             <p className="text-slate-400 mb-6 text-sm">
               Your trusted contacts have been notified. Live location sharing has started.
             </p>
-            <button 
+            <button
               onClick={() => setSosSuccessShown(false)}
               className="bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 font-bold py-3 px-8 rounded-full transition-colors cursor-pointer"
             >
@@ -756,7 +775,7 @@ export const UserDashboard = () => {
                         </span>
                         <span className="text-[10px] text-cyan-500 font-mono">{getElapsed(sosTimers?.smsEnd)}</span>
                       </div>
-                      
+
                       <div className="flex items-center gap-3 text-sm font-medium">
                         {sosState?.whatsappSent === true ? (
                           <CheckCircle2 className="w-4 h-4 text-emerald-400" />
@@ -772,7 +791,7 @@ export const UserDashboard = () => {
                         </span>
                         <span className="text-[10px] text-cyan-500 font-mono">{getElapsed(sosTimers?.whatsappEnd)}</span>
                       </div>
-                      
+
                       <div className="flex items-center gap-3 text-sm font-medium border-t border-red-500/20 pt-2 mt-1">
                         <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                         <span className="text-emerald-100 flex-1">Live Tracking Started</span>
