@@ -10,7 +10,7 @@ class User(Base):
     name = Column(String, nullable=False)
     email = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
-    role = Column(String, default="user") # user, guardian, admin
+    role = Column(String, default="USER") # USER, MODERATOR, ADMIN, SUPER_ADMIN
     tracking_code = Column(String, unique=True, index=True, nullable=True) # Public key for guardians to track
     battery_level = Column(Integer, default=100)
     is_emergency = Column(Boolean, default=False)

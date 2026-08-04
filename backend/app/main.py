@@ -4,8 +4,8 @@ from sqlalchemy.orm import Session
 import os
 
 from .config import settings
-from .database import engine, Base, get_db
-from .routes import auth, users, emergency, ai_routes
+from .database import engine, Base, get_db, SessionLocal
+from .routes import auth, users, emergency, ai_routes, admin
 from .services.websocket_manager import manager
 from . import models
 
@@ -31,6 +31,28 @@ app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(emergency.router)
 app.include_router(ai_routes.router)
+app.include_router(admin.router)
+
+@app.on_event("startup")
+def startup_event():
+    db = SessionLocal()
+    try:
+        from .auth import get_password_hash
+        import uuid
+        admin_email = "admin@safenova.com"
+        admin_user = db.query(models.User).filter(models.User.email == admin_email).first()
+        if not admin_user:
+            admin_user = models.User(
+                name="Super Admin",
+                email=admin_email,
+                hashed_password=get_password_hash("admin123"),
+                role="SUPER_ADMIN",
+                tracking_code=str(uuid.uuid4())[:8].upper()
+            )
+            db.add(admin_user)
+            db.commit()
+    finally:
+        db.close()
 
 @app.get("/")
 def read_root():
